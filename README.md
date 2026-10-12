@@ -7,6 +7,7 @@
 | 담당 | 김경우 |
 | 관련 기능 ID | U-21 주문 생성, U-22 결제, U-23 재고 부족 거절, U-31 주문 상태, S-50 신규 주문 목록, E-02 주문 Saga |
 | 기술 | Java 21, Spring Boot 3, Spring Data JPA, Spring Cloud AWS (SQS), ShedLock, 토스페이먼츠 테스트 키, MySQL |
+| 관측성 | Actuator·Micrometer → Prometheus (`/actuator/prometheus`, 관리 포트 8081) · Micrometer Tracing → Zipkin · JSON 로그(traceId 포함) → Alloy → Loki ([gitops/platform/observability](https://github.com/sesac-freshlink/gitops/tree/main/platform/observability)) |
 | DB | RDS `freshlink-mysql`의 `orders` 스키마 (DB 사용자 `order_app`) |
 | 배포 | GitHub Actions → ECR `freshlink/order-service` → ArgoCD → EKS (파드 2개) |
 
