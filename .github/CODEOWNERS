@@ -1,5 +1,4 @@
 # PR을 열면 아래 담당자가 리뷰어로 자동 지정된다.
 # 승인 규칙: 담당자 본인 PR은 다른 팀원 1명이 승인한다 (CODEOWNERS 승인 필수는 걸지 않는다).
 # 담당: 김경우
-# TODO: 김경우 GitHub 아이디가 Organization에 합류하면 아래 줄의 주석을 풀고 아이디를 넣는다.
-# * @<김경우-github-id>
+* @casebass3-max
