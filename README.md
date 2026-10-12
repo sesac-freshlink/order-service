@@ -109,6 +109,6 @@ export TOSS_SECRET_KEY=<토스페이먼츠 테스트 시크릿 키>
 
 - `main`(배포) ← `dev`(통합, 기본 브랜치) ← `feat/<기능ID>-<설명>` (예: `feat/U-21-create-order`)
 - 커밋·PR 제목: `feat(U-21): 주문 생성 API 추가`
-- 쪽지 형식이 바뀌는 PR은 `message-spec` 라벨을 달고 이태우에게도 리뷰를 받는다.
+- 쪽지 형식이 바뀌는 PR은 `message-spec` 라벨을 달고 합치기 전에 이태우에게 꼭 알린다.
 
 자세한 규칙은 [.github 레포](https://github.com/sesac-freshlink/.github)를 참고한다.
