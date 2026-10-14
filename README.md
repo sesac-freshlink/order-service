@@ -7,7 +7,7 @@
 | 담당 | 김경우 |
 | 관련 기능 ID | U-21 주문 생성, U-22 결제, U-23 재고 부족 거절, U-31 주문 상태, S-50 신규 주문 목록, E-02 주문 Saga |
 | 기술 | Java 21, Spring Boot 3, Spring Data JPA, Spring Cloud AWS (SQS), ShedLock, 토스페이먼츠 테스트 키, MySQL |
-| 관측성 | Actuator·Micrometer → Prometheus (`/actuator/prometheus`, 관리 포트 8081) · Micrometer Tracing → Zipkin · JSON 로그(traceId 포함) → Alloy → Loki ([gitops/platform/observability](https://github.com/sesac-freshlink/gitops/tree/main/platform/observability)) |
+| 관측성 | Actuator·Micrometer → Prometheus (앱 포트의 `/actuator/prometheus`, 관리 포트를 따로 두지 않는다. 모든 서비스가 8080) · Micrometer Tracing → Zipkin · JSON 로그(traceId 포함) → Alloy → Loki ([gitops/platform/observability](https://github.com/sesac-freshlink/gitops/tree/main/platform/observability)) |
 | DB | RDS `freshlink-mysql`의 `orders` 스키마 (DB 사용자 `order_app`) |
 | 배포 | GitHub Actions → ECR `freshlink/order-service` → ArgoCD → EKS (파드 2개) |
 
@@ -89,21 +89,22 @@ order-service/
 └── src/test/java/com/freshlink/order/
 ```
 
-## 6. 로컬에서 실행하기
+## 6. dev 환경에서 실행하기
 
 > 아직 뼈대만 있는 상태다. 첫 작업으로 [Spring Initializr](https://start.spring.io)에서 Gradle·Java 21·Web·JPA·MySQL Driver로 프로젝트를 만들고, Spring Cloud AWS SQS와 `com.freshlink:common` 의존성을 추가한다.
 
-1. [local-dev](https://github.com/sesac-freshlink/local-dev)에서 `docker compose up -d`
-2. inventory-service를 띄운다 (예약 결과를 받으려면 필요)
-3. 이 레포에서
+개발할 때도 AWS dev 환경의 RDS·SQS·Cognito를 그대로 쓴다. AWS 로그인, DB 포트 포워딩(SSM), 개인 큐 설정은 [개발 환경 접속 가이드](https://github.com/sesac-freshlink/.github/blob/main/docs/개발환경-접속.md)를 따른다.
 
 ```bash
-export DB_PASSWORD=<local-dev의 order_app 비밀번호>
+export SPRING_PROFILES_ACTIVE=dev
+export DB_URL=jdbc:mysql://127.0.0.1:3306/orders      # SSM 포트 포워딩으로 연결한 dev RDS
+export DB_PASSWORD=<dev Secrets Manager의 order_app 비밀번호>
 export TOSS_SECRET_KEY=<토스페이먼츠 테스트 시크릿 키>
-./gradlew bootRun --args='--spring.profiles.active=local'
+export QUEUE_PREFIX=dev-<내 이름>-                     # 개인 큐
+./gradlew bootRun
 ```
 
-토스 키는 절대 커밋하지 않는다. 운영에서는 Organization Secret → Kubernetes Secret으로 넣는다.
+토스 키는 절대 커밋하지 않는다. dev·prod 클러스터에서는 Secrets Manager → External Secrets로 넣는다.
 
 ## 7. 브랜치와 기여
 
