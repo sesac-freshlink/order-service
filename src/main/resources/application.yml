@@ -1,12 +1,12 @@
 # order-service 기본 설정 (뼈대). 실제 값은 환경 변수나 Kubernetes Secret으로 넣는다.
 server:
-  port: 8083
+  port: 8080
 
 spring:
   application:
     name: order-service
   datasource:
-    # 로컬: local-dev 레포의 Docker Compose MySQL / 운영: RDS freshlink-mysql
-    url: ${DB_URL:jdbc:mysql://localhost:3306/orders}
+    # dev·prod 모두 RDS. 주소는 환경 변수 DB_URL로 넣는다
+    url: ${DB_URL}
     username: ${DB_USERNAME:order_app}
     password: ${DB_PASSWORD:}
