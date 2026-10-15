@@ -91,7 +91,9 @@ order-service/
 
 ## 6. dev 환경에서 실행하기
 
-> 아직 뼈대만 있는 상태다. 첫 작업으로 [Spring Initializr](https://start.spring.io)에서 Gradle·Java 21·Web·JPA·MySQL Driver로 프로젝트를 만들고, Spring Cloud AWS SQS와 `com.freshlink:common` 의존성을 추가한다.
+> Spring 뼈대(Boot 4.0.8, Gradle 9.8.1, Java 21)까지 들어 있다. 엔티티·API는 없다. Spring Cloud AWS SQS와 `com.freshlink:common` 의존성은 기능 작업 때 추가한다.
+>
+> **DB 없이 IntelliJ에서 띄우기:** Docker Desktop을 켜고 `src/test/.../TestOrderServiceApplication`을 Run 하면 Testcontainers가 MySQL 8.4 컨테이너를 띄워 연결한다. 환경 변수가 필요 없다. 아래는 dev RDS에 붙일 때다.
 
 개발할 때도 AWS dev 환경의 RDS·SQS·Cognito를 그대로 쓴다. AWS 로그인, DB 포트 포워딩(SSM), 개인 큐 설정은 [개발 환경 접속 가이드](https://github.com/sesac-freshlink/.github/blob/main/docs/개발환경-접속.md)를 따른다.
 
