@@ -1,4 +1,5 @@
 # order-service 기본 설정 (뼈대). 실제 값은 환경 변수나 Kubernetes Secret으로 넣는다.
+# 프로필은 dev·prod 두 개. SPRING_PROFILES_ACTIVE로 고른다.
 server:
   port: 8080
 
@@ -7,6 +8,25 @@ spring:
     name: order-service
   datasource:
     # dev·prod 모두 RDS. 주소는 환경 변수 DB_URL로 넣는다
-    url: ${DB_URL}
+    # IntelliJ에서 TestOrderServiceApplication으로 실행하면 Docker MySQL이 대신 붙는다 (DB_URL 불필요)
+    url: ${DB_URL:}
     username: ${DB_USERNAME:order_app}
     password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Seoul
+  jackson:
+    time-zone: Asia/Seoul         # 시각은 ISO-8601 +09:00
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true             # /actuator/health/liveness, /readiness
