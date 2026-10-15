@@ -10,6 +10,7 @@
 |------|------|
 | `README.md` | 이 레포의 기능·API·데이터 모델·폴더 구조·dev 환경 실행 (진실) |
 | `.github` 레포 `docs/기획안-및-설계도.md` | 기능 ID, 메시지 명세, 데이터 모델 |
+| `.github` 레포 `docs/주문-결제-흐름과-재고-예약.md` | **주문·결제 작업 전에 먼저 읽는다.** 고객이 보는 흐름과 내부 재고 예약의 구분, 주문 상태별 고객 화면 문구 |
 | `.github` 레포 `CONTRIBUTING.md` | 브랜치·커밋·PR 규칙 |
 | `.github` 레포 `docs/ai-agents.md` | 백엔드 에이전트 플러그인(`freshlink-backend`) 설치·사용법 (사람용) |
 
@@ -47,6 +48,8 @@
 ✅ 재고를 직접 건드리지 않는다. RESERVE·CONFIRM·RELEASE 쪽지를 outbox로 inventory-commands.fifo에 보낸다 (그룹 = storeId)
 ✅ 주문 저장과 outbox 저장은 한 트랜잭션. inventory-results 리스너는 processed_message로 멱등 처리
 ✅ 상태: RESERVING → PAYMENT_WAITING → PAID / OUT_OF_STOCK / PAYMENT_FAILED / EXPIRED. 실패 시 RELEASE 보상
+✅ 재고 예약(RESERVE)은 결제하는 동안 재고를 잡아 두는 내부 단계다. 고객은 "주문하고 결제"만 본다
+⛔ 고객용 API 경로·필드에 reservation/reserve를 넣지 않는다 (POST /reservations ✗ → POST /orders). 예약하기·예약 내역 같은 고객 기능을 만들지 않는다
 ✅ 10분 미결제 정리 스케줄러는 ShedLock (파드 2개). 결제 승인과 경합하지 않게 상태 조건으로 갱신
 ✅ 고객 주문 조회는 customer_id = X-User-Id 확인, 점주 목록은 X-Store-Id 기준
 ✅ 토스 승인 API 호출에 타임아웃. 테스트에서 실제 토스에 접속하지 않는다 (목)
