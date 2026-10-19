@@ -9,7 +9,9 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -100,6 +102,24 @@ public class Order {
         order.quantity = quantity;
         order.status = OrderStatus.RESERVING;
         return order;
+    }
+
+    /** 주문번호 FL-yyyyMMdd-000123 (id가 6자리를 넘으면 자릿수가 늘어난다) */
+    public static String formatOrderNo(Long id, LocalDate date) {
+        return String.format("FL-%s-%06d", date.format(DateTimeFormatter.BASIC_ISO_DATE), id);
+    }
+
+    /** 주문번호는 한 번만 정한다 */
+    public void assignOrderNo(String orderNo) {
+        if (this.orderNo != null) {
+            throw new IllegalStateException("주문번호가 이미 있다: " + this.orderNo);
+        }
+        this.orderNo = orderNo;
+    }
+
+    /** 같은 Idempotency-Key 재요청이 처음 요청과 같은 내용인지 본다 (점포 이름은 비교하지 않는다) */
+    public boolean hasSameContent(Long storeId, Long productId, int quantity) {
+        return this.storeId.equals(storeId) && this.productId.equals(productId) && this.quantity == quantity;
     }
 
     public Long getId() { return id; }
