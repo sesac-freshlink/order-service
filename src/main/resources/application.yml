@@ -30,3 +30,5 @@ management:
     health:
       probes:
         enabled: true             # /actuator/health/liveness, /readiness
+
+# Flyway: src/main/resources/db/migration/V1__xxx.sql 부터 담당자가 채운다. 아직 파일이 없으면 경고만 찍고 지나간다.

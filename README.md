@@ -6,7 +6,7 @@
 | --- | --- |
 | 담당 | 김경우 |
 | 관련 기능 ID | U-21 주문 생성, U-22 결제, U-23 재고 부족 거절, U-31 주문 상태, S-50 신규 주문 목록, E-02 주문 Saga |
-| 기술 | Java 21, Spring Boot 4.0.x, Spring Data JPA, Spring Cloud AWS 4.x (SQS), ShedLock, 토스페이먼츠 테스트 키, MySQL |
+| 기술 | Java 21, Spring Boot 4.0.x, Spring Data JPA, Flyway(테이블 마이그레이션), Spring Cloud AWS 4.x (SQS), ShedLock, 토스페이먼츠 테스트 키, MySQL |
 | 관측성 | Actuator·Micrometer → Prometheus (앱 포트의 `/actuator/prometheus`, 관리 포트를 따로 두지 않는다. 모든 서비스가 8080) · Micrometer Tracing → Zipkin · JSON 로그(traceId 포함) → Alloy → Loki ([gitops/platform/observability](https://github.com/sesac-freshlink/gitops/tree/main/platform/observability)) |
 | DB | RDS `freshlink-mysql`의 `orders` 스키마 (DB 사용자 `order_app`) |
 | 배포 | GitHub Actions → ECR `freshlink/order-service` → ArgoCD → EKS (파드 2개) |
@@ -93,7 +93,8 @@ order-service/
 ├── src/main/resources/
 │   ├── application.yml                # 공통. 값은 환경 변수
 │   ├── application-dev.yml            # 로그 레벨만 다름
-│   └── application-prod.yml
+│   ├── application-prod.yml
+│   └── db/migration/                  # Flyway SQL. V1__init.sql 부터
 └── src/test/java/com/freshlink/order/
     └── common/error/GlobalExceptionHandlerTest.java   # 오류 응답 모양 (DB 없이)
 ```

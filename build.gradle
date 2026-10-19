@@ -33,6 +33,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'    // @Valid
     implementation 'org.springframework.boot:spring-boot-starter-actuator'      // /actuator/health
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'                  // /actuator/prometheus
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'       // 테이블은 Flyway 마이그레이션으로 관리 (db/migration/V1__ 부터)
+    runtimeOnly 'org.flywaydb:flyway-mysql'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'

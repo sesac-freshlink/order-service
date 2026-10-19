@@ -45,6 +45,7 @@
 ## 이 레포 규칙
 
 ```
+✅ 테이블 변경은 Flyway 마이그레이션 파일(src/main/resources/db/migration/V<n>__<설명>.sql)로만. spring.jpa.hibernate.ddl-auto 쓰지 않는다. 적용된 파일은 고치지 않고 새 버전을 추가한다
 ✅ 재고를 직접 건드리지 않는다. RESERVE·CONFIRM·RELEASE 쪽지를 outbox로 inventory-commands.fifo에 보낸다 (그룹 = storeId)
 ✅ 주문 저장과 outbox 저장은 한 트랜잭션. inventory-results 리스너는 processed_message로 멱등 처리
 ✅ 상태: RESERVING → PAYMENT_WAITING → PAID / OUT_OF_STOCK / PAYMENT_FAILED / EXPIRED. 실패 시 RELEASE 보상
