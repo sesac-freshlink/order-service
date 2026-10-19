@@ -5,8 +5,8 @@ server:
 
 app:
   queue:
-    # RESERVE·CONFIRM·RELEASE를 보내는 큐 (기획안 5장). 접두사는 QUEUE_PREFIX: PC는 dev-kyungwoo-, dev 클러스터는 dev-
-    commands: ${QUEUE_PREFIX:dev-}inventory-commands.fifo
+    # RESERVE·CONFIRM·RELEASE를 보내는 큐 (기획안 5장). 접두사 QUEUE_PREFIX는 필수 (기본값 없음, dev만 application-dev.yml에서 보충)
+    commands: ${QUEUE_PREFIX}inventory-commands.fifo
 
 freshlink:
   messaging:
@@ -27,6 +27,8 @@ spring:
       hibernate:
         jdbc:
           time_zone: Asia/Seoul
+        timezone:
+          default_storage: NORMALIZE   # OffsetDateTime을 jdbc.time_zone(KST) 벽시계로 저장
   jackson:
     time-zone: Asia/Seoul         # 시각은 ISO-8601 +09:00
   cloud:

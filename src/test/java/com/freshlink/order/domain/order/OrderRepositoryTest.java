@@ -4,6 +4,7 @@ import com.freshlink.order.TestcontainersConfiguration;
 import com.freshlink.order.common.config.JpaAuditingConfig;
 import java.util.Map;
 import java.util.UUID;
+import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -12,6 +13,7 @@ import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -121,5 +123,18 @@ class OrderRepositoryTest {
         assertThat(found.getStatus()).isEqualTo(OrderStatus.OUT_OF_STOCK);
         assertThat(found.getFailureReason()).isEqualTo(OrderFailureReason.OUT_OF_STOCK);
         assertThat(found.getAvailableQuantity()).isEqualTo(2);
+    }
+
+    @Test
+    void OffsetDateTime은_KST_벽시계_그대로_DB에_저장된다() {
+        // 00:30 KST: UTC로 정규화되면 전날 15:30으로 저장되어 order_no 날짜와 어긋난다
+        Order order = newOrder(uuid(), uuid());
+        ReflectionTestUtils.setField(order, "paymentWaitingAt", OffsetDateTime.parse("2026-10-20T00:30:00+09:00"));
+        Long id = orderRepository.saveAndFlush(order).getId();
+
+        String raw = jdbcTemplate.queryForObject(
+                "SELECT DATE_FORMAT(payment_waiting_at, '%Y-%m-%d %H:%i') FROM orders WHERE id = ?", String.class, id);
+
+        assertThat(raw).isEqualTo("2026-10-20 00:30");
     }
 }
