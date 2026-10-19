@@ -45,6 +45,7 @@
 ## 이 레포 규칙
 
 ```
+✅ 테이블 변경은 Flyway 마이그레이션 파일(src/main/resources/db/migration/V<n>__<설명>.sql)로만. spring.jpa.hibernate.ddl-auto 쓰지 않는다. 적용된 파일은 고치지 않고 새 버전을 추가한다
 ✅ 재고를 직접 건드리지 않는다. RESERVE·CONFIRM·RELEASE 쪽지를 outbox로 inventory-commands.fifo에 보낸다 (그룹 = storeId)
 ✅ 주문 저장과 outbox 저장은 한 트랜잭션. inventory-results 리스너는 processed_message로 멱등 처리
 ✅ 상태: RESERVING → PAYMENT_WAITING → PAID / OUT_OF_STOCK / PAYMENT_FAILED / EXPIRED. 실패 시 RELEASE 보상
@@ -56,6 +57,8 @@
 ⚠️ 주문 저장소: README는 MySQL orders 스키마지만 DynamoDB 도입을 검토 중이다 (미정). 저장소를 새로 만들거나 바꾸는 작업은 시작 전에 사용자에게 어느 쪽인지 묻는다
 ⛔ 토스 시크릿 키는 ${TOSS_SECRET_KEY}로만. 커밋·출력 금지
 ⛔ 쪽지 형식을 바꾸면 PR에 message-spec 라벨, 합치기 전 이태우에게 알린다
+✅ 패키지: common/(config·error·log·messaging)은 도메인과 상관없는 공통 코드, domain/<도메인>은 엔티티·서비스·API
+✅ 오류: throw new BusinessException(OrderErrorCode.XXX). 코드 추가는 common/error/OrderErrorCode enum에 한 줄. 응답은 항상 code·message·traceId (common/error/GlobalExceptionHandler는 안 건드린다)
 ```
 
 ## 검증

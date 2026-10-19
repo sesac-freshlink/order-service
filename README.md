@@ -6,7 +6,7 @@
 | --- | --- |
 | 담당 | 김경우 |
 | 관련 기능 ID | U-21 주문 생성, U-22 결제, U-23 재고 부족 거절, U-31 주문 상태, S-50 신규 주문 목록, E-02 주문 Saga |
-| 기술 | Java 21, Spring Boot 4.0.x, Spring Data JPA, Spring Cloud AWS 4.x (SQS), ShedLock, 토스페이먼츠 테스트 키, MySQL |
+| 기술 | Java 21, Spring Boot 4.0.x, Spring Data JPA, Flyway(테이블 마이그레이션), Spring Cloud AWS 4.x (SQS), ShedLock, 토스페이먼츠 테스트 키, MySQL |
 | 관측성 | Actuator·Micrometer → Prometheus (앱 포트의 `/actuator/prometheus`, 관리 포트를 따로 두지 않는다. 모든 서비스가 8080) · Micrometer Tracing → Zipkin · JSON 로그(traceId 포함) → Alloy → Loki ([gitops/platform/observability](https://github.com/sesac-freshlink/gitops/tree/main/platform/observability)) |
 | DB | RDS `freshlink-mysql`의 `orders` 스키마 (DB 사용자 `order_app`) |
 | 배포 | GitHub Actions → ECR `freshlink/order-service` → ArgoCD → EKS (파드 2개) |
@@ -78,16 +78,36 @@ sequenceDiagram
 
 ```
 order-service/
+├── build.gradle                       # Boot 4.0.8, Web·JPA·Validation·Actuator·MySQL·Testcontainers + common
 ├── src/main/java/com/freshlink/order/
-│   ├── config/      # SQS, ShedLock, Swagger, 토스 클라이언트 설정
-│   ├── order/       # 주문 엔티티, 주문 API
-│   ├── payment/     # 토스 결제 승인
-│   ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
-│   ├── messaging/   # inventory-results 리스너
-│   └── scheduler/   # 10분 미결제 주문 정리
-├── src/main/resources/application.yml
+│   ├── OrderServiceApplication.java
+│   ├── common/                        # 도메인과 상관없는 공통 코드
+│   │   ├── config/      # SQS, ShedLock, Swagger, 토스 클라이언트 설정
+│   │   ├── error/       # OrderErrorCode(enum), GlobalExceptionHandler
+│   │   └── messaging/   # inventory-results 리스너, outbox 발행
+│   └── domain/                        # 도메인별 엔티티·서비스·API
+│       ├── order/       # 주문 엔티티, 주문 API
+│       ├── payment/     # 토스 결제 승인
+│       ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
+│       └── scheduler/   # 10분 미결제 주문 정리
+├── src/main/resources/
+│   ├── application.yml                # 공통. 값은 환경 변수
+│   ├── application-dev.yml            # 로그 레벨만 다름
+│   ├── application-prod.yml
+│   └── db/migration/                  # Flyway SQL. V1__init.sql 부터
 └── src/test/java/com/freshlink/order/
+    └── common/error/GlobalExceptionHandlerTest.java   # 오류 응답 모양 (DB 없이)
 ```
+
+## 5-1. 오류 처리
+
+규칙은 .github 레포 `docs/백엔드-공통-규칙.md` 6장. 응답 모양은 common 라이브러리, 오류 목록과 핸들러는 이 레포에 있다.
+
+| 할 일 | 방법 |
+| --- | --- |
+| 업무 오류 던지기 | `throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);` 한 줄 |
+| 오류 코드 추가 | `common/error/OrderErrorCode`에 `XXX(404, "메시지")` 한 줄. 핸들러는 안 건드린다 |
+| 응답 모양 | 항상 `{"code": "ORDER_NOT_FOUND", "message": "주문이 없습니다", "traceId": "4bf92f3577b34da6"}`. `@Valid` 실패는 400 `VALIDATION_ERROR`(message에 필드별 사유), 없는 경로는 404 `NOT_FOUND`, 그 밖은 500 `INTERNAL_ERROR`(원인은 로그에만) |
 
 ## 6. dev 환경에서 실행하기
 
