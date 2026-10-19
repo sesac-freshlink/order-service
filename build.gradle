@@ -16,9 +16,18 @@ java {
 
 repositories {
     mavenCentral()
+    maven {
+        // common 라이브러리 (GitHub Packages). 읽기에도 read:packages 토큰이 필요하다. 각자 PC 환경 변수 GITHUB_ACTOR, GITHUB_TOKEN에 둔다
+        url = uri("https://maven.pkg.github.com/sesac-freshlink/common")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
 }
 
 dependencies {
+    implementation 'com.freshlink:common:0.1.0'                               // 쪽지 DTO 7종, ErrorCode·BusinessException·ErrorResponse
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'        // REST API
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'      // MySQL 접근
     implementation 'org.springframework.boot:spring-boot-starter-validation'    // @Valid

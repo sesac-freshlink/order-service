@@ -78,17 +78,36 @@ sequenceDiagram
 
 ```
 order-service/
+├── build.gradle                       # Boot 4.0.8, Web·JPA·Validation·Actuator·MySQL·Testcontainers + common
 ├── src/main/java/com/freshlink/order/
-│   ├── config/      # SQS, ShedLock, Swagger, 토스 클라이언트 설정
-│   ├── order/       # 주문 엔티티, 주문 API
-│   ├── payment/     # 토스 결제 승인
-│   ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
-│   ├── messaging/   # inventory-results 리스너
-│   └── scheduler/   # 10분 미결제 주문 정리
-├── src/main/resources/application.yml
-├── src/main/resources/db/migration/   # Flyway SQL. V1__init.sql 부터
+│   ├── OrderServiceApplication.java
+│   ├── common/                        # 도메인과 상관없는 공통 코드
+│   │   ├── config/      # SQS, ShedLock, Swagger, 토스 클라이언트 설정
+│   │   ├── error/       # OrderErrorCode(enum), GlobalExceptionHandler
+│   │   └── messaging/   # inventory-results 리스너, outbox 발행
+│   └── domain/                        # 도메인별 엔티티·서비스·API
+│       ├── order/       # 주문 엔티티, 주문 API
+│       ├── payment/     # 토스 결제 승인
+│       ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
+│       └── scheduler/   # 10분 미결제 주문 정리
+├── src/main/resources/
+│   ├── application.yml                # 공통. 값은 환경 변수
+│   ├── application-dev.yml            # 로그 레벨만 다름
+│   ├── application-prod.yml
+│   └── db/migration/                  # Flyway SQL. V1__init.sql 부터
 └── src/test/java/com/freshlink/order/
+    └── common/error/GlobalExceptionHandlerTest.java   # 오류 응답 모양 (DB 없이)
 ```
+
+## 5-1. 오류 처리
+
+규칙은 .github 레포 `docs/백엔드-공통-규칙.md` 6장. 응답 모양은 common 라이브러리, 오류 목록과 핸들러는 이 레포에 있다.
+
+| 할 일 | 방법 |
+| --- | --- |
+| 업무 오류 던지기 | `throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);` 한 줄 |
+| 오류 코드 추가 | `common/error/OrderErrorCode`에 `XXX(404, "메시지")` 한 줄. 핸들러는 안 건드린다 |
+| 응답 모양 | 항상 `{"code": "ORDER_NOT_FOUND", "message": "주문이 없습니다", "traceId": "4bf92f3577b34da6"}`. `@Valid` 실패는 400 `VALIDATION_ERROR`(message에 필드별 사유), 없는 경로는 404 `NOT_FOUND`, 그 밖은 500 `INTERNAL_ERROR`(원인은 로그에만) |
 
 ## 6. dev 환경에서 실행하기
 

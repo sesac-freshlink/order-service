@@ -57,6 +57,8 @@
 ⚠️ 주문 저장소: README는 MySQL orders 스키마지만 DynamoDB 도입을 검토 중이다 (미정). 저장소를 새로 만들거나 바꾸는 작업은 시작 전에 사용자에게 어느 쪽인지 묻는다
 ⛔ 토스 시크릿 키는 ${TOSS_SECRET_KEY}로만. 커밋·출력 금지
 ⛔ 쪽지 형식을 바꾸면 PR에 message-spec 라벨, 합치기 전 이태우에게 알린다
+✅ 패키지: common/(config·error·log·messaging)은 도메인과 상관없는 공통 코드, domain/<도메인>은 엔티티·서비스·API
+✅ 오류: throw new BusinessException(OrderErrorCode.XXX). 코드 추가는 common/error/OrderErrorCode enum에 한 줄. 응답은 항상 code·message·traceId (common/error/GlobalExceptionHandler는 안 건드린다)
 ```
 
 ## 검증
