@@ -10,6 +10,13 @@ app:
     # RESERVED·RESERVE_FAILED를 받는 큐 (표준 큐, DLQ는 인프라가 붙인다)
     results: ${QUEUE_PREFIX}inventory-results
 
+  # 토스페이먼츠 결제 승인. 시크릿 키는 TOSS_SECRET_KEY로만 (커밋·출력 금지). 비어 있으면 결제 승인이 500으로 거절된다
+  toss:
+    base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
+    secret-key: ${TOSS_SECRET_KEY:}
+    connect-timeout: 3s
+    read-timeout: 15s
+
 freshlink:
   messaging:
     enabled: true                 # common Outbox 발행기·멱등 처리 켜기 (inventory·order만)

@@ -1,0 +1,119 @@
+package com.freshlink.order.domain.payment;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.OffsetDateTime;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+/** 주문 1건당 승인 시도 1건 (표 payment, V1). 토스 오류 코드·메시지는 여기와 로그에만 남긴다 */
+@Entity
+@Table(name = "payment")
+@EntityListeners(AuditingEntityListener.class)
+public class Payment {
+
+    private static final int ERROR_CODE_MAX = 80;
+    private static final int ERROR_MESSAGE_MAX = 500;
+    private static final int SHORT_MAX = 30;
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "order_id", nullable = false, unique = true)
+    private Long orderId;
+
+    @Column(name = "payment_key", nullable = false, length = 200, unique = true)
+    private String paymentKey;
+
+    @Column(name = "toss_idempotency_key", nullable = false, length = 36)
+    private String tossIdempotencyKey;
+
+    @Column(name = "amount", nullable = false)
+    private long amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private PaymentStatus status;
+
+    @Column(name = "toss_status", length = 30)
+    private String tossStatus;
+
+    @Column(name = "method", length = 30)
+    private String method;
+
+    @Column(name = "error_code", length = 80)
+    private String errorCode;
+
+    @Column(name = "error_message", length = 500)
+    private String errorMessage;
+
+    @Column(name = "approved_at")
+    private OffsetDateTime approvedAt;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private OffsetDateTime createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt;
+
+    protected Payment() {
+    }
+
+    /** 승인 시작. 토스 멱등키는 주문 생성 키와 다른 새 UUID다 */
+    public static Payment start(Long orderId, String paymentKey, String tossIdempotencyKey, long amount) {
+        Payment p = new Payment();
+        p.orderId = orderId;
+        p.paymentKey = paymentKey;
+        p.tossIdempotencyKey = tossIdempotencyKey;
+        p.amount = amount;
+        p.status = PaymentStatus.APPROVING;
+        return p;
+    }
+
+    public void approve(String tossStatus, String method, OffsetDateTime approvedAt) {
+        this.status = PaymentStatus.DONE;
+        this.tossStatus = cut(tossStatus, SHORT_MAX);
+        this.method = cut(method, SHORT_MAX);
+        this.approvedAt = approvedAt;
+    }
+
+    public void fail(String errorCode, String errorMessage) {
+        this.status = PaymentStatus.FAILED;
+        recordError(errorCode, errorMessage);
+    }
+
+    /** 결과 불명·연동 오류: 상태는 APPROVING 그대로 두고 마지막 오류만 남긴다 */
+    public void recordError(String errorCode, String errorMessage) {
+        this.errorCode = cut(errorCode, ERROR_CODE_MAX);
+        this.errorMessage = cut(errorMessage, ERROR_MESSAGE_MAX);
+    }
+
+    private static String cut(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
+    }
+
+    public Long getId() { return id; }
+    public Long getOrderId() { return orderId; }
+    public String getPaymentKey() { return paymentKey; }
+    public String getTossIdempotencyKey() { return tossIdempotencyKey; }
+    public long getAmount() { return amount; }
+    public PaymentStatus getStatus() { return status; }
+    public String getTossStatus() { return tossStatus; }
+    public String getMethod() { return method; }
+    public String getErrorCode() { return errorCode; }
+    public String getErrorMessage() { return errorMessage; }
+    public OffsetDateTime getApprovedAt() { return approvedAt; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
+}

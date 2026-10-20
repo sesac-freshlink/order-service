@@ -65,7 +65,7 @@ sequenceDiagram
 | E-02 | 주문 Saga | 쪽지 흐름 | 결제 실패·10분 미결제 시 예약 재고가 돌아온다 |
 
 - 경로는 서비스 안 경로다. 브라우저는 `/api/orders`로 부르고 gateway가 `/api`를 뗀다.
-- 구현된 것: U-21 주문 생성(OR-01), U-31 주문 조회(OR-02, 본인 주문만, 시각은 +09:00), S-50 점주 신규 주문 목록(OR-04, `X-Store-Id` 점포의 `PAID` 주문을 결제 최신순으로), U-23 재고 확보 결과 반영(`inventory-results` 리스너: `RESERVED` → `PAYMENT_WAITING`, `RESERVE_FAILED` → `OUT_OF_STOCK`). 요청·응답·오류 코드는 order-service API 명세를 따른다.
+- 구현된 것: U-21 주문 생성(OR-01), U-31 주문 조회(OR-02, 본인 주문만, 시각은 +09:00), S-50 점주 신규 주문 목록(OR-04, `X-Store-Id` 점포의 `PAID` 주문을 결제 최신순으로), U-22 결제 승인(OR-03, 토스 승인 → `PAID` + CONFIRM / 확정 실패 → `PAYMENT_FAILED` + RELEASE / 결과 불명 → `PAYMENT_APPROVING` 유지), U-23 재고 확보 결과 반영(`inventory-results` 리스너: `RESERVED` → `PAYMENT_WAITING`, `RESERVE_FAILED` → `OUT_OF_STOCK`). 요청·응답·오류 코드는 order-service API 명세를 따른다.
 - 결과 쪽지는 `messageId`로 한 번만 반영하고(processed_message), 주문이 `RESERVING`일 때만 바꾼다. 다른 상태면 무시하고 로그만 남긴다. 주문과 맞지 않는 `RESERVED`(점포·상품·수량, lot 합계)나 없는 주문의 결과는 예외를 던져 SQS가 다시 보내게 하고, 계속 실패하면 DLQ로 간다.
 
 ## 4. 데이터 모델
@@ -94,7 +94,7 @@ order-service/
 │   │   └── web/         # gateway가 넘기는 헤더 이름과 역할 확인(AuthHeaders, 그룹이 여럿이면 쉼표로 온다)
 │   └── domain/                        # 도메인별 엔티티·서비스·API
 │       ├── order/       # 주문·주문 lot 엔티티와 리포지토리, 주문 생성·조회·점주 목록 API와 서비스, 예약 결과 반영(ReservationResultHandler)
-│       ├── payment/     # 토스 결제 승인
+│       ├── payment/     # 토스 결제 승인 (PaymentService, Payment 엔티티, toss/ 클라이언트·오류 코드 분류)
 │       ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
 │       └── scheduler/   # 10분 미결제 주문 정리
 ├── src/main/resources/
@@ -134,7 +134,7 @@ export QUEUE_PREFIX=dev-<내 이름>-                     # 개인 큐
 ./gradlew bootRun
 ```
 
-토스 키는 절대 커밋하지 않는다. dev·prod 클러스터에서는 Secrets Manager → External Secrets로 넣는다.
+토스 키는 절대 커밋하지 않는다. `TOSS_SECRET_KEY`가 비어 있으면 앱은 뜨지만 결제 승인은 주문을 바꾸지 않고 500으로 거절한다. 토스 호출 타임아웃은 연결 3초·응답 15초다. dev·prod 클러스터에서는 Secrets Manager → External Secrets로 넣는다.
 
 ## 7. 브랜치와 기여
 
