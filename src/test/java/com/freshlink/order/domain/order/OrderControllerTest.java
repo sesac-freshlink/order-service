@@ -3,12 +3,14 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.GlobalExceptionHandler;
 import com.freshlink.order.common.error.OrderErrorCode;
+import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -17,6 +19,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -52,7 +55,7 @@ class OrderControllerTest {
 
     private Order order(long id) {
         Order o = Order.create(USER, KEY, 1L, "프레시마트 강남점", 10L, 2);
-        org.springframework.test.util.ReflectionTestUtils.setField(o, "id", id);
+        ReflectionTestUtils.setField(o, "id", id);
         o.assignOrderNo("FL-20261020-000123");
         return o;
     }
@@ -156,6 +159,86 @@ class OrderControllerTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(with(KEY, "a".repeat(37), "CUSTOMER"))
                 .andExpect(status().isForbidden());
+        verifyNoInteractions(orderService);
+    }
+
+    // ---------------------------------------------------------------- OR-02 주문 조회
+
+    private MockHttpServletRequestBuilder getOrder(String id, String userId, String role) {
+        MockHttpServletRequestBuilder b = get("/orders/" + id);
+        if (userId != null) b.header("X-User-Id", userId);
+        if (role != null) b.header("X-User-Role", role);
+        return b;
+    }
+
+    @Test
+    void 주문_조회는_200과_14개_필드를_돌려주고_시각은_KST다() throws Exception {
+        Order o = order(123L);
+        // DB에서 UTC로 읽혀도 응답은 +09:00이어야 한다
+        ReflectionTestUtils.setField(o, "createdAt", OffsetDateTime.parse("2026-10-20T06:31:55Z"));
+        o.reserve("매운 컵라면 115g", 1700L, OffsetDateTime.parse("2026-10-20T06:32:00Z"));
+        when(orderService.get(USER, 123L)).thenReturn(o);
+
+        mockMvc.perform(getOrder("123", USER, "CUSTOMER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderId").value(123))
+                .andExpect(jsonPath("$.orderNo").value("FL-20261020-000123"))
+                .andExpect(jsonPath("$.status").value("PAYMENT_WAITING"))
+                .andExpect(jsonPath("$.failureReason").isEmpty())
+                .andExpect(jsonPath("$.storeId").value(1))
+                .andExpect(jsonPath("$.storeName").value("프레시마트 강남점"))
+                .andExpect(jsonPath("$.productId").value(10))
+                .andExpect(jsonPath("$.productName").value("매운 컵라면 115g"))
+                .andExpect(jsonPath("$.quantity").value(2))
+                .andExpect(jsonPath("$.unitPrice").value(1700))
+                .andExpect(jsonPath("$.amount").value(3400))
+                .andExpect(jsonPath("$.paymentExpiresAt").value("2026-10-20T15:42:00+09:00"))
+                .andExpect(jsonPath("$.paidAt").isEmpty())
+                .andExpect(jsonPath("$.createdAt").value("2026-10-20T15:31:55+09:00"));
+    }
+
+    @Test
+    void 예약_중인_주문은_상품명_단가_금액_마감이_null() throws Exception {
+        when(orderService.get(USER, 123L)).thenReturn(order(123L));
+
+        mockMvc.perform(getOrder("123", USER, "CUSTOMER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RESERVING"))
+                .andExpect(jsonPath("$.productName").isEmpty())
+                .andExpect(jsonPath("$.unitPrice").isEmpty())
+                .andExpect(jsonPath("$.amount").isEmpty())
+                .andExpect(jsonPath("$.paymentExpiresAt").isEmpty())
+                .andExpect(jsonPath("$.paidAt").isEmpty());
+    }
+
+    @Test
+    void 주문_조회도_고객이_아니거나_사용자가_없으면_403_FORBIDDEN() throws Exception {
+        mockMvc.perform(getOrder("123", USER, "OWNER"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(getOrder("123", null, "CUSTOMER"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        verifyNoInteractions(orderService);
+    }
+
+    @Test
+    void 없는_주문은_404_남의_주문은_403_ORDER_ACCESS_DENIED() throws Exception {
+        when(orderService.get(USER, 1L)).thenThrow(new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        when(orderService.get(USER, 2L)).thenThrow(new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED));
+
+        mockMvc.perform(getOrder("1", USER, "CUSTOMER"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+        mockMvc.perform(getOrder("2", USER, "CUSTOMER"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ORDER_ACCESS_DENIED"))
+                .andExpect(jsonPath("$.message").value("본인 주문만 볼 수 있습니다"));
+    }
+
+    @Test
+    void 주문_ID가_숫자가_아니면_400() throws Exception {
+        mockMvc.perform(getOrder("abc", USER, "CUSTOMER")).andExpect(status().isBadRequest());
         verifyNoInteractions(orderService);
     }
 }
