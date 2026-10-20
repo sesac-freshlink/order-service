@@ -65,7 +65,8 @@ sequenceDiagram
 | E-02 | 주문 Saga | 쪽지 흐름 | 결제 실패·10분 미결제 시 예약 재고가 돌아온다 |
 
 - 경로는 서비스 안 경로다. 브라우저는 `/api/orders`로 부르고 gateway가 `/api`를 뗀다.
-- 구현된 것: U-21 주문 생성(OR-01). 요청·응답·오류 코드는 order-service API 명세를 따른다.
+- 구현된 것: U-21 주문 생성(OR-01), U-23 재고 확보 결과 반영(`inventory-results` 리스너: `RESERVED` → `PAYMENT_WAITING`, `RESERVE_FAILED` → `OUT_OF_STOCK`). 요청·응답·오류 코드는 order-service API 명세를 따른다.
+- 결과 쪽지는 `messageId`로 한 번만 반영하고(processed_message), 주문이 `RESERVING`일 때만 바꾼다. 다른 상태면 무시하고 로그만 남긴다. 주문과 맞지 않는 `RESERVED`(점포·상품·수량, lot 합계)나 없는 주문의 결과는 예외를 던져 SQS가 다시 보내게 하고, 계속 실패하면 DLQ로 간다.
 
 ## 4. 데이터 모델
 
@@ -87,12 +88,12 @@ order-service/
 ├── src/main/java/com/freshlink/order/
 │   ├── OrderServiceApplication.java
 │   ├── common/                        # 도메인과 상관없는 공통 코드
-│   │   ├── config/      # ShedLock(LockConfig), JPA Auditing, 토스 클라이언트 설정
+│   │   ├── config/      # ShedLock(LockConfig), JPA Auditing, 시계(ClockConfig), 토스 클라이언트 설정
 │   │   ├── error/       # OrderErrorCode(enum), GlobalExceptionHandler
-│   │   ├── messaging/   # inventory-results 리스너
+│   │   ├── messaging/   # inventory-results 리스너(InventoryResultListener)
 │   │   └── web/         # gateway가 넘기는 헤더 이름(AuthHeaders)
 │   └── domain/                        # 도메인별 엔티티·서비스·API
-│       ├── order/       # 주문 엔티티·리포지토리, 주문 생성 API·서비스
+│       ├── order/       # 주문·주문 lot 엔티티와 리포지토리, 주문 생성 API·서비스, 예약 결과 반영(ReservationResultHandler)
 │       ├── payment/     # 토스 결제 승인
 │       ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
 │       └── scheduler/   # 10분 미결제 주문 정리
@@ -118,9 +119,9 @@ order-service/
 
 ## 6. dev 환경에서 실행하기
 
-> Boot 4.0.8, Gradle 9.8.1, Java 21. `com.freshlink:common` 0.2.0(Outbox 발행기·멱등 처리)과 Spring Cloud AWS SQS를 쓴다. RESERVE 쪽지는 `app.queue.commands`(= `${QUEUE_PREFIX}inventory-commands.fifo`)로 나간다.
+> Boot 4.0.8, Gradle 9.8.1, Java 21. `com.freshlink:common` 0.2.0(Outbox 발행기·멱등 처리)과 Spring Cloud AWS SQS를 쓴다. RESERVE 쪽지는 `app.queue.commands`(= `${QUEUE_PREFIX}inventory-commands.fifo`)로 나가고, 결과는 `app.queue.results`(= `${QUEUE_PREFIX}inventory-results`)에서 받는다. 큐가 없으면 앱이 뜨지 않는다(`queue-not-found-strategy: fail`, 큐는 인프라가 만든다).
 >
-> **DB 없이 IntelliJ에서 띄우기:** Docker Desktop을 켜고 `src/test/java/com/freshlink/order/TestOrderServiceApplication`을 Run 한다. DB를 따로 띄우지 않아도 MySQL 8.4 이미지를 받아 컨테이너로 띄우고 자동으로 붙는다 (Testcontainers 라이브러리 기능). main 소스 변경사항이 그대로 반영된다. RDS가 준비되면 아래처럼 `DB_URL` 환경 변수만 주고 `OrderServiceApplication`으로 실행한다.
+> **DB 없이 IntelliJ에서 띄우기:** Docker Desktop을 켜고 `src/test/java/com/freshlink/order/TestOrderServiceApplication`을 Run 한다. DB를 따로 띄우지 않아도 MySQL 8.4 이미지를 받아 컨테이너로 띄우고 자동으로 붙는다 (Testcontainers 라이브러리 기능). main 소스 변경사항이 그대로 반영된다. AWS 큐에 붙지 않고 띄우려면 실행 설정에 `--spring.cloud.aws.sqs.listener.auto-startup=false`를 준다(결과 쪽지를 받지 않는다). RDS가 준비되면 아래처럼 `DB_URL` 환경 변수만 주고 `OrderServiceApplication`으로 실행한다.
 
 개발할 때도 AWS dev 환경의 RDS·SQS·Cognito를 그대로 쓴다. AWS 로그인, DB 포트 포워딩(SSM), 개인 큐 설정은 [개발 환경 접속 가이드](https://github.com/sesac-freshlink/.github/blob/main/docs/개발환경-접속.md)를 따른다.
 
