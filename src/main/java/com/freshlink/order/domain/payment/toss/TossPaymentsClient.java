@@ -64,6 +64,31 @@ public class TossPaymentsClient {
         }
     }
 
+    /** OP-01 결제 조회. 예외를 던지지 않는다. 오류·타임아웃·결제 없음은 found=false */
+    public TossLookupResult lookup(String paymentKey) {
+        try {
+            return restClient.get()
+                    .uri("/v1/payments/{paymentKey}", paymentKey)
+                    .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                    .exchange((request, response) -> {
+                        if (response.getStatusCode().is2xxSuccessful()) {
+                            TossPayment body = response.bodyTo(TossPayment.class);
+                            if (body == null || body.status() == null) {
+                                return TossLookupResult.notFound(null, "빈 응답");
+                            }
+                            return TossLookupResult.found(body.status(), body.method(), parse(body.approvedAt()),
+                                    body.orderId(), body.totalAmount());
+                        }
+                        TossError error = readError(response);
+                        return TossLookupResult.notFound(error == null ? null : error.code(),
+                                error == null ? null : error.message());
+                    });
+        } catch (RestClientException e) {
+            log.warn("토스 결제 조회 실패 cause={}", e.getClass().getSimpleName());
+            return TossLookupResult.notFound(null, e.getClass().getSimpleName());
+        }
+    }
+
     private String basicAuth() {
         String raw = (secretKey == null ? "" : secretKey) + ":";
         return "Basic " + Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
@@ -90,8 +115,8 @@ public class TossPaymentsClient {
         }
     }
 
-    /** 토스 Payment 객체 중 쓰는 필드만 */
-    record TossPayment(String status, String method, String approvedAt) {
+    /** 토스 Payment 객체 중 쓰는 필드만 (orderId = 우리 orderNo) */
+    record TossPayment(String status, String method, String approvedAt, String orderId, Long totalAmount) {
     }
 
     /** 토스 오류 응답 {"code": ..., "message": ...} */

@@ -148,4 +148,42 @@ class TossPaymentsClientTest {
         assertThat(r.outcome()).isEqualTo(TossOutcome.APPROVED);
         assertThat(r.approvedAt()).isNull();
     }
+
+    // ---------------------------------------------------------------- 결제 조회 (OP-01)
+
+    @Test
+    void 결제_조회는_GET_paymentKey로_부르고_상태를_읽는다() {
+        String basic = "Basic " + Base64.getEncoder().encodeToString((SECRET + ":").getBytes(StandardCharsets.UTF_8));
+        server.expect(requestTo(BASE + "/v1/payments/pk_1"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", basic))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\","
+                        + "\"approvedAt\":\"2026-10-20T15:35:10+09:00\",\"orderId\":\"FL-20261020-000123\","
+                        + "\"totalAmount\":3400}", MediaType.APPLICATION_JSON));
+
+        TossLookupResult r = client.lookup("pk_1");
+
+        server.verify();
+        assertThat(r.found()).isTrue();
+        assertThat(r.status()).isEqualTo("DONE");
+        assertThat(r.method()).isEqualTo("카드");
+        assertThat(r.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-10-20T15:35:10+09:00"));
+        assertThat(r.orderId()).isEqualTo("FL-20261020-000123");
+        assertThat(r.totalAmount()).isEqualTo(3400L);
+    }
+
+    @Test
+    void 결제_조회_오류나_타임아웃은_찾지_못한_것으로_본다() {
+        server.expect(requestTo(BASE + "/v1/payments/pk_1"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body(error("NOT_FOUND_PAYMENT")));
+        TossLookupResult notFound = client.lookup("pk_1");
+        assertThat(notFound.found()).isFalse();
+        assertThat(notFound.errorCode()).isEqualTo("NOT_FOUND_PAYMENT");
+
+        server.reset();
+        server.expect(requestTo(BASE + "/v1/payments/pk_1"))
+                .andRespond(withException(new SocketTimeoutException("read timed out")));
+        assertThat(client.lookup("pk_1").found()).isFalse();
+    }
 }
