@@ -75,6 +75,13 @@ public class PaymentSyncService {
                     orderId, result.errorCode(), result.errorMessage());
             return order.getStatus();
         }
+        if (!matchesOrder(order, result)) {
+            // 저장된 paymentKey가 다른 결제를 가리키면 이 주문을 확정하지 않는다 (성공·실패 모두)
+            log.error("결제 확인: 토스 결제가 이 주문과 맞지 않아 그대로 둔다 (개발자 확인) orderId={} orderNo={} amount={} "
+                            + "tossOrderId={} tossAmount={}",
+                    orderId, order.getOrderNo(), order.getAmount(), result.orderId(), result.totalAmount());
+            return order.getStatus();
+        }
         Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow();
         OffsetDateTime now = OffsetDateTime.now(clock);
         String status = result.status();
@@ -91,5 +98,11 @@ public class PaymentSyncService {
             log.info("결제 확인: 아직 결과 불명이라 그대로 둔다 orderId={} tossStatus={}", orderId, status);
         }
         return order.getStatus();
+    }
+
+    /** 토스 결제의 주문번호·금액이 이 주문과 같은지 본다 */
+    private static boolean matchesOrder(Order order, TossLookupResult result) {
+        return order.getOrderNo() != null && order.getOrderNo().equals(result.orderId())
+                && order.getAmount() != null && order.getAmount().equals(result.totalAmount());
     }
 }

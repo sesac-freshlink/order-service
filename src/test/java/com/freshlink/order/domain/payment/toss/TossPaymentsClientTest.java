@@ -158,7 +158,8 @@ class TossPaymentsClientTest {
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header("Authorization", basic))
                 .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\","
-                        + "\"approvedAt\":\"2026-10-20T15:35:10+09:00\"}", MediaType.APPLICATION_JSON));
+                        + "\"approvedAt\":\"2026-10-20T15:35:10+09:00\",\"orderId\":\"FL-20261020-000123\","
+                        + "\"totalAmount\":3400}", MediaType.APPLICATION_JSON));
 
         TossLookupResult r = client.lookup("pk_1");
 
@@ -167,6 +168,8 @@ class TossPaymentsClientTest {
         assertThat(r.status()).isEqualTo("DONE");
         assertThat(r.method()).isEqualTo("카드");
         assertThat(r.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-10-20T15:35:10+09:00"));
+        assertThat(r.orderId()).isEqualTo("FL-20261020-000123");
+        assertThat(r.totalAmount()).isEqualTo(3400L);
     }
 
     @Test

@@ -76,7 +76,8 @@ public class TossPaymentsClient {
                             if (body == null || body.status() == null) {
                                 return TossLookupResult.notFound(null, "빈 응답");
                             }
-                            return TossLookupResult.found(body.status(), body.method(), parse(body.approvedAt()));
+                            return TossLookupResult.found(body.status(), body.method(), parse(body.approvedAt()),
+                                    body.orderId(), body.totalAmount());
                         }
                         TossError error = readError(response);
                         return TossLookupResult.notFound(error == null ? null : error.code(),
@@ -114,8 +115,8 @@ public class TossPaymentsClient {
         }
     }
 
-    /** 토스 Payment 객체 중 쓰는 필드만 */
-    record TossPayment(String status, String method, String approvedAt) {
+    /** 토스 Payment 객체 중 쓰는 필드만 (orderId = 우리 orderNo) */
+    record TossPayment(String status, String method, String approvedAt, String orderId, Long totalAmount) {
     }
 
     /** 토스 오류 응답 {"code": ..., "message": ...} */

@@ -8,15 +8,19 @@ public record TossLookupResult(
         String status,
         String method,
         OffsetDateTime approvedAt,
+        String orderId,
+        Long totalAmount,
         String errorCode,
         String errorMessage
 ) {
 
-    public static TossLookupResult found(String status, String method, OffsetDateTime approvedAt) {
-        return new TossLookupResult(true, status, method, approvedAt, null, null);
+    /** orderId는 토스 결제의 주문번호(우리 orderNo), totalAmount는 결제 금액 */
+    public static TossLookupResult found(String status, String method, OffsetDateTime approvedAt,
+                                         String orderId, Long totalAmount) {
+        return new TossLookupResult(true, status, method, approvedAt, orderId, totalAmount, null, null);
     }
 
     public static TossLookupResult notFound(String errorCode, String errorMessage) {
-        return new TossLookupResult(false, null, null, null, errorCode, errorMessage);
+        return new TossLookupResult(false, null, null, null, null, null, errorCode, errorMessage);
     }
 }

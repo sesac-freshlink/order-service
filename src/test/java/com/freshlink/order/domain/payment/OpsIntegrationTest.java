@@ -99,8 +99,10 @@ class OpsIntegrationTest {
                 .toList();
     }
 
-    private void tossSays(String tossStatus) {
-        when(toss.lookup(any())).thenReturn(TossLookupResult.found(tossStatus, "카드", APPROVED_AT));
+    /** 이 주문과 맞는 토스 결제 (주문번호 FL-20261020-{id}, 금액 3400) */
+    private void tossSays(long orderId, String tossStatus) {
+        when(toss.lookup(any())).thenReturn(
+                TossLookupResult.found(tossStatus, "카드", APPROVED_AT, "FL-20261020-" + orderId, 3400L));
     }
 
     // ---------------------------------------------------------------- OP-01
@@ -108,7 +110,7 @@ class OpsIntegrationTest {
     @Test
     void 토스가_DONE이면_PAID와_CONFIRM() throws Exception {
         long id = order("PAYMENT_APPROVING");
-        tossSays("DONE");
+        tossSays(id, "DONE");
 
         sync(id).andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(id))
@@ -127,7 +129,7 @@ class OpsIntegrationTest {
     @ValueSource(strings = {"ABORTED", "EXPIRED"})
     void 토스가_최종_실패면_PAYMENT_FAILED와_RELEASE(String tossStatus) throws Exception {
         long id = order("PAYMENT_APPROVING");
-        tossSays(tossStatus);
+        tossSays(id, tossStatus);
 
         sync(id).andExpect(status().isOk())
                 .andExpect(jsonPath("$.after").value("PAYMENT_FAILED"))
@@ -145,7 +147,7 @@ class OpsIntegrationTest {
     @ValueSource(strings = {"READY", "IN_PROGRESS", "WAITING_FOR_DEPOSIT", "CANCELED", "PARTIAL_CANCELED"})
     void 아직_불명이거나_생기면_안_되는_상태면_그대로(String tossStatus) throws Exception {
         long id = order("PAYMENT_APPROVING");
-        tossSays(tossStatus);
+        tossSays(id, tossStatus);
 
         sync(id).andExpect(status().isOk())
                 .andExpect(jsonPath("$.before").value("PAYMENT_APPROVING"))
@@ -155,6 +157,25 @@ class OpsIntegrationTest {
         assertThat(statusOf(id)).isEqualTo(OrderStatus.PAYMENT_APPROVING);
         assertThat(outboxOf(id, "CONFIRM")).isEmpty();
         assertThat(outboxOf(id, "RELEASE")).isEmpty();
+    }
+
+    @Test
+    void 토스_결제의_주문번호나_금액이_다르면_그대로_둔다() throws Exception {
+        long otherOrderNo = order("PAYMENT_APPROVING");
+        when(toss.lookup(any())).thenReturn(
+                TossLookupResult.found("DONE", "카드", APPROVED_AT, "FL-20261020-999999", 3400L));
+        sync(otherOrderNo).andExpect(status().isOk()).andExpect(jsonPath("$.after").value("PAYMENT_APPROVING"));
+
+        long otherAmount = order("PAYMENT_APPROVING");
+        when(toss.lookup(any())).thenReturn(
+                TossLookupResult.found("ABORTED", "카드", APPROVED_AT, "FL-20261020-" + otherAmount, 9999L));
+        sync(otherAmount).andExpect(status().isOk()).andExpect(jsonPath("$.after").value("PAYMENT_APPROVING"));
+
+        for (long id : List.of(otherOrderNo, otherAmount)) {
+            assertThat(statusOf(id)).isEqualTo(OrderStatus.PAYMENT_APPROVING);
+            assertThat(outboxOf(id, "CONFIRM")).isEmpty();
+            assertThat(outboxOf(id, "RELEASE")).isEmpty();
+        }
     }
 
     @Test
@@ -184,7 +205,7 @@ class OpsIntegrationTest {
     @Test
     void 두_번_불러도_CONFIRM은_한_건() throws Exception {
         long id = order("PAYMENT_APPROVING");
-        tossSays("DONE");
+        tossSays(id, "DONE");
 
         sync(id).andExpect(status().isOk());
         sync(id).andExpect(status().isConflict());
