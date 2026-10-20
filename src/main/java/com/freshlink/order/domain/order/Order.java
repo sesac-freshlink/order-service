@@ -146,6 +146,38 @@ public class Order {
         this.closedAt = now;
     }
 
+    /**
+     * OR-03 승인 시작: PAYMENT_WAITING이고 마감 전일 때만 PAYMENT_APPROVING으로 바꾼다.
+     * 행을 잠근 채(findByIdForUpdate) 부르므로 만료 스케줄러와 동시에 확정되지 않는다
+     */
+    public void startApproval(OffsetDateTime now) {
+        if (status != OrderStatus.PAYMENT_WAITING || paymentExpiresAt == null || !now.isBefore(paymentExpiresAt)) {
+            throw new IllegalStateException("승인을 시작할 수 없다: orderId=" + id + " status=" + status);
+        }
+        this.status = OrderStatus.PAYMENT_APPROVING;
+    }
+
+    /** 토스 승인 성공 */
+    public void markPaid(OffsetDateTime paidAt) {
+        requireApproving();
+        this.status = OrderStatus.PAID;
+        this.paidAt = paidAt;
+    }
+
+    /** 토스 확정 실패. 재고는 RELEASE로 돌려준다 */
+    public void failPayment(OffsetDateTime now) {
+        requireApproving();
+        this.status = OrderStatus.PAYMENT_FAILED;
+        this.failureReason = OrderFailureReason.PAYMENT_FAILED;
+        this.closedAt = now;
+    }
+
+    private void requireApproving() {
+        if (status != OrderStatus.PAYMENT_APPROVING) {
+            throw new IllegalStateException("결제 결과는 PAYMENT_APPROVING에서만 반영한다: orderId=" + id + " status=" + status);
+        }
+    }
+
     private void requireReserving() {
         if (status != OrderStatus.RESERVING) {
             throw new IllegalStateException("예약 결과는 RESERVING에서만 반영한다: orderId=" + id + " status=" + status);

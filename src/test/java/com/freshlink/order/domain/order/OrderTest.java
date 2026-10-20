@@ -78,4 +78,46 @@ class OrderTest {
         assertThatThrownBy(() -> order.rejectReservation(OrderFailureReason.OUT_OF_STOCK, 1, NOW))
                 .isInstanceOf(IllegalStateException.class);
     }
+
+    private Order waiting() {
+        Order order = Order.create("c", "k", 1L, "점포", 10L, 2);
+        order.reserve("상품", 1700L, NOW);
+        return order;
+    }
+
+    @Test
+    void 결제_대기이고_마감_전이면_승인_중으로_바뀐다() {
+        Order order = waiting();
+
+        order.startApproval(NOW.plusMinutes(9));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_APPROVING);
+    }
+
+    @Test
+    void 마감이_지났거나_결제_대기가_아니면_승인을_시작할_수_없다() {
+        assertThatThrownBy(() -> waiting().startApproval(NOW.plusMinutes(10))).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> Order.create("c", "k", 1L, "점포", 10L, 2).startApproval(NOW))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 승인_중에서_결제_완료와_결제_실패로_끝난다() {
+        Order paid = waiting();
+        paid.startApproval(NOW);
+        paid.markPaid(NOW.plusMinutes(1));
+        assertThat(paid.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(paid.getPaidAt()).isEqualTo(NOW.plusMinutes(1));
+        assertThat(paid.getClosedAt()).isNull();
+
+        Order failed = waiting();
+        failed.startApproval(NOW);
+        failed.failPayment(NOW.plusMinutes(1));
+        assertThat(failed.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(failed.getFailureReason()).isEqualTo(OrderFailureReason.PAYMENT_FAILED);
+        assertThat(failed.getClosedAt()).isEqualTo(NOW.plusMinutes(1));
+
+        assertThatThrownBy(() -> waiting().markPaid(NOW)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> waiting().failPayment(NOW)).isInstanceOf(IllegalStateException.class);
+    }
 }

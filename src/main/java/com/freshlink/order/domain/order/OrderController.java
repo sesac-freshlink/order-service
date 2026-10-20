@@ -3,6 +3,9 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.common.web.AuthHeaders;
+import com.freshlink.order.domain.payment.PaymentConfirmRequest;
+import com.freshlink.order.domain.payment.PaymentConfirmResponse;
+import com.freshlink.order.domain.payment.PaymentService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -26,9 +29,11 @@ public class OrderController {
     private static final int USER_ID_MAX_LENGTH = 36;
 
     private final OrderService orderService;
+    private final PaymentService paymentService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, PaymentService paymentService) {
         this.orderService = orderService;
+        this.paymentService = paymentService;
     }
 
     /** OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200 */
@@ -53,6 +58,17 @@ public class OrderController {
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
         requireCustomer(userId, role);
         return OrderResponse.from(orderService.get(userId, orderId));
+    }
+
+    /** OR-03 결제 승인: 토스 결제창 성공 뒤 화면이 부른다. 결과는 status로 알린다 */
+    @PostMapping("/{orderId}/payment/confirm")
+    public PaymentConfirmResponse confirmPayment(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @Valid @RequestBody PaymentConfirmRequest request) {
+        requireCustomer(userId, role);
+        return paymentService.confirm(userId, orderId, request);
     }
 
     /** 고객 API 공통: 역할이 CUSTOMER이고 X-User-Id가 있어야 한다. 아니면 403 FORBIDDEN */
