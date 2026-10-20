@@ -72,13 +72,15 @@ sequenceDiagram
 
 | 표 | 주요 컬럼 |
 | --- | --- |
-| `orders` | id, order_no, customer_id, request_id, store_id, store_name, product_id, product_name, quantity, unit_price, amount, status, failure_reason, payment_expires_at, created_at |
+| `orders` | id, order_no, customer_id, request_id, store_id, store_name, product_id, product_name, quantity, unit_price, amount, status, failure_reason, available_quantity, payment_waiting_at, payment_expires_at, paid_at, closed_at, created_at, updated_at |
 | `order_lot` | id, order_id, lot_id, quantity, expiry_at (RESERVED로 받은 lot) |
-| `payment` | id, order_id, payment_key, amount, status |
+| `payment` | id, order_id, payment_key, toss_idempotency_key, amount, status(APPROVING/DONE/FAILED), toss_status, method, error_code, error_message, approved_at |
 | `shedlock` | 파드 2개 중 한 곳만 스케줄러·Outbox 발행기를 돌리는 잠금 |
 | `outbox`, `processed_message` | [common](https://github.com/sesac-freshlink/common) 모듈이 쓰는 표 |
 
 `order`는 SQL 예약어라 표·스키마 이름을 `orders`로 쓴다. 표는 Flyway로 만든다(V1 주문·lot·결제·shedlock, V2 outbox·processed_message).
+
+시각 칼럼은 한국 시각 벽시계로 저장한다(`hibernate.timezone.default_storage: NORMALIZE` + `jdbc.time_zone: Asia/Seoul`). 응답은 `+09:00`이다. common이 쓰는 `outbox`·`processed_message`의 시각은 DB의 `NOW(6)`이라 RDS 세션 시간대(UTC)를 따른다(비교에 쓰지 않아 동작에는 영향이 없다).
 
 ## 5. 폴더 구조
 
@@ -93,9 +95,11 @@ order-service/
 │   │   ├── messaging/   # inventory-results 리스너(InventoryResultListener)
 │   │   └── web/         # gateway가 넘기는 헤더 이름과 역할 확인(AuthHeaders, 그룹이 여럿이면 쉼표로 온다)
 │   └── domain/                        # 도메인별 엔티티·서비스·API
-│       ├── order/       # 주문·주문 lot 엔티티와 리포지토리, 주문 생성·조회·점주 목록 API와 서비스, 예약 결과 반영(ReservationResultHandler)
-│       ├── payment/     # 토스 결제 승인 (PaymentService, Payment 엔티티, toss/ 클라이언트·오류 코드 분류)
-│       ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
+│       ├── order/       # 주문·주문 lot 엔티티, 주문 생성·조회·점주 목록 API, 예약 결과 반영(ReservationResultHandler),
+│       │                #   결제 시간 만료(OrderExpiryService), 운영 API(OpsOrderController: OP-01·OP-02, OrderCloseService)
+│       ├── payment/     # 토스 결제 승인(PaymentService), 결제 결과 수동 확인(PaymentSyncService), 결과 반영 공통(PaymentResultWriter),
+│       │                #   Payment 엔티티, toss/ 클라이언트(승인·조회)·오류 코드 분류
+│       ├── saga/        # 비어 있다. 상태 전이는 Order 메서드, 보상(RELEASE)은 PaymentResultWriter·OrderExpiryService·OrderCloseService가 한다
 │       └── scheduler/   # 10분 미결제 주문 정리 (OrderExpiryScheduler, 잠금 order-expiry)
 ├── src/main/resources/
 │   ├── application.yml                # 공통. 값은 환경 변수
@@ -104,7 +108,9 @@ order-service/
 │   └── db/migration/                  # Flyway SQL. V1__init.sql 부터
 └── src/test/java/com/freshlink/order/
     ├── common/error/GlobalExceptionHandlerTest.java   # 오류 응답 모양 (DB 없이)
-    └── domain/order/                  # 엔티티·서비스 단위, 컨트롤러(@WebMvcTest), Testcontainers 통합 테스트 (SQS는 목)
+    ├── domain/order/                  # 엔티티·서비스 단위, 컨트롤러(@WebMvcTest), Testcontainers 통합 테스트 (SQS는 목)
+    ├── domain/payment/                # 결제 승인·수동 확인 통합 테스트(토스 클라이언트 목), toss/ 클라이언트(가짜 서버)·오류 코드 분류
+    └── domain/scheduler/              # 만료 스케줄러 잠금
 ```
 
 ## 5-1. 오류 처리
