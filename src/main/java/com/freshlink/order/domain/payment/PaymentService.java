@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -53,7 +54,16 @@ public class PaymentService {
     }
 
     public PaymentConfirmResponse confirm(String customerId, Long orderId, PaymentConfirmRequest req) {
-        Start start = transactionTemplate.execute(s -> begin(customerId, orderId, req));
+        Start start;
+        try {
+            start = transactionTemplate.execute(s -> begin(customerId, orderId, req));
+        } catch (DataIntegrityViolationException e) {
+            // 미리 확인한 뒤 같은 키가 동시에 들어온 경우. 이 키 충돌만 409로 바꾸고 나머지는 그대로 던진다
+            if (PaymentKeys.isDuplicate(e)) {
+                throw new BusinessException(OrderErrorCode.PAYMENT_INFO_MISMATCH);
+            }
+            throw e;
+        }
         if (start.tossKey() == null) {
             return PaymentConfirmResponse.from(start.order());
         }
@@ -96,9 +106,13 @@ public class PaymentService {
             // 부르기 전에 알 수 있는 설정 오류다. 주문을 승인 중에 묶어 두지 않고 그대로 둔다
             throw new IllegalStateException("TOSS_SECRET_KEY가 설정되지 않아 결제 승인을 시작하지 않는다: orderId=" + orderId);
         }
+        // paymentKey는 결제 하나에만 쓴다. 다른 주문이 이미 쓴 키면 토스를 부르지 않고 409
+        if (paymentRepository.existsByPaymentKey(req.paymentKey())) {
+            throw new BusinessException(OrderErrorCode.PAYMENT_INFO_MISMATCH);
+        }
         order.startApproval(now);
         String tossKey = UUID.randomUUID().toString();
-        paymentRepository.save(Payment.start(orderId, req.paymentKey(), tossKey, req.amount()));
+        paymentRepository.saveAndFlush(Payment.start(orderId, req.paymentKey(), tossKey, req.amount()));
         log.info("결제 승인 시작 orderId={} amount={}", orderId, req.amount());
         return new Start(order, tossKey);
     }
