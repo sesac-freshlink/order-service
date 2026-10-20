@@ -74,10 +74,16 @@ class OrderCreateIntegrationTest {
         return jdbc.queryForObject("SELECT COUNT(*) FROM orders WHERE customer_id = ?", Integer.class, customer);
     }
 
+    /** 이 주문의 RESERVE outbox 행. payload는 JSON으로 읽어 비교한다 (필드 순서에 기대지 않는다) */
+    private List<Map<String, Object>> reserveRows(long orderId) {
+        return jdbc.queryForList("SELECT * FROM outbox WHERE message_type = 'RESERVE'").stream()
+                .filter(row -> MessageJson.fromJson((String) row.get("payload"), ReserveMessage.class)
+                        .orderId().equals(orderId))
+                .toList();
+    }
+
     private int outboxCount(long orderId) {
-        return jdbc.queryForObject(
-                "SELECT COUNT(*) FROM outbox WHERE message_type = 'RESERVE' AND payload LIKE ?", Integer.class,
-                "%\"orderId\":" + orderId + ",%");
+        return reserveRows(orderId).size();
     }
 
     @Test
@@ -100,9 +106,7 @@ class OrderCreateIntegrationTest {
         assertThat((String) order.get("order_no")).contains("-" + kstDate + "-");
         assertThat(res.getResponse().getContentAsString()).contains("\"orderId\":" + orderId);
 
-        List<Map<String, Object>> outbox = jdbc.queryForList(
-                "SELECT * FROM outbox WHERE message_type = 'RESERVE' AND payload LIKE ?",
-                "%\"orderId\":" + orderId + ",%");
+        List<Map<String, Object>> outbox = reserveRows(orderId);
         assertThat(outbox).hasSize(1);
         Map<String, Object> row = outbox.get(0);
         assertThat(row.get("queue_name")).isEqualTo(commandsQueue);

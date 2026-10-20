@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Pattern;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -37,12 +39,27 @@ public class OrderController {
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
             @Valid @RequestBody CreateOrderRequest request) {
+        requireCustomer(userId, role);
+        CreateOrderResult result = orderService.create(userId, idempotencyKey.toLowerCase(Locale.ROOT), request);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(CreateOrderResponse.from(result.order()));
+    }
+
+    /** OR-02 주문 조회: 본인 주문만 */
+    @GetMapping("/{orderId}")
+    public OrderResponse get(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
+        requireCustomer(userId, role);
+        return OrderResponse.from(orderService.get(userId, orderId));
+    }
+
+    /** 고객 API 공통: 역할이 CUSTOMER이고 X-User-Id가 있어야 한다. 아니면 403 FORBIDDEN */
+    private static void requireCustomer(String userId, String role) {
         if (!AuthHeaders.ROLE_CUSTOMER.equals(role)
                 || userId == null || userId.isBlank() || userId.length() > USER_ID_MAX_LENGTH) {
             throw new BusinessException(OrderErrorCode.FORBIDDEN);
         }
-        CreateOrderResult result = orderService.create(userId, idempotencyKey.toLowerCase(Locale.ROOT), request);
-        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
-        return ResponseEntity.status(status).body(CreateOrderResponse.from(result.order()));
     }
 }

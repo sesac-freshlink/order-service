@@ -48,7 +48,7 @@
 ✅ 테이블 변경은 Flyway 마이그레이션 파일(src/main/resources/db/migration/V<n>__<설명>.sql)로만. spring.jpa.hibernate.ddl-auto 쓰지 않는다. 적용된 파일은 고치지 않고 새 버전을 추가한다
 ✅ 재고를 직접 건드리지 않는다. RESERVE·CONFIRM·RELEASE 쪽지를 outbox로 inventory-commands.fifo에 보낸다 (그룹 = storeId)
 ✅ 주문 저장과 outbox 저장은 한 트랜잭션. inventory-results 리스너는 processed_message로 멱등 처리
-✅ 상태: RESERVING → PAYMENT_WAITING → PAID / OUT_OF_STOCK / PAYMENT_FAILED / EXPIRED. 실패 시 RELEASE 보상
+✅ 상태: RESERVING → PAYMENT_WAITING → PAYMENT_APPROVING → PAID / OUT_OF_STOCK / PAYMENT_FAILED / EXPIRED. 실패 시 RELEASE 보상
 ✅ 재고 예약(RESERVE)은 결제하는 동안 재고를 잡아 두는 내부 단계다. 고객은 "주문하고 결제"만 본다
 ⛔ 고객용 API 경로·필드에 reservation/reserve를 넣지 않는다 (POST /reservations ✗ → POST /orders). 예약하기·예약 내역 같은 고객 기능을 만들지 않는다
 ✅ 10분 미결제 정리 스케줄러는 ShedLock (파드 2개). 결제 승인과 경합하지 않게 상태 조건으로 갱신

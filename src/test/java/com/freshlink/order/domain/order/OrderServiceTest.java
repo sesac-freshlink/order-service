@@ -3,6 +3,7 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.outbox.OutboxWriter;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,11 +13,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.OffsetDateTime;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,7 +60,7 @@ class OrderServiceTest {
         assertThat(result.created()).isTrue();
         assertThat(result.order().getOrderNo()).isEqualTo("FL-20261020-000123");
         ArgumentCaptor<ReserveMessage> captor = ArgumentCaptor.forClass(ReserveMessage.class);
-        verify(outboxWriter).save(org.mockito.ArgumentMatchers.eq(QUEUE), captor.capture());
+        verify(outboxWriter).save(eq(QUEUE), captor.capture());
         ReserveMessage msg = captor.getValue();
         assertThat(msg.orderId()).isEqualTo(123L);
         assertThat(msg.storeId()).isEqualTo(1L);
@@ -118,5 +118,30 @@ class OrderServiceTest {
         when(orderRepository.saveAndFlush(any(Order.class))).thenThrow(dup);
 
         assertThatThrownBy(() -> service.create(CUSTOMER, KEY, request(2))).isSameAs(dup);
+    }
+
+    @Test
+    void 내_주문이면_조회된다() {
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(saved(5L)));
+
+        assertThat(service.get(CUSTOMER, 5L).getId()).isEqualTo(5L);
+    }
+
+    @Test
+    void 남의_주문이면_ORDER_ACCESS_DENIED() {
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(saved(5L)));
+
+        assertThatThrownBy(() -> service.get("33333333-3333-3333-3333-333333333333", 5L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.code()).isEqualTo("ORDER_ACCESS_DENIED"));
+    }
+
+    @Test
+    void 없는_주문이면_ORDER_NOT_FOUND() {
+        when(orderRepository.findById(5L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.get(CUSTOMER, 5L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.code()).isEqualTo("ORDER_NOT_FOUND"));
     }
 }
