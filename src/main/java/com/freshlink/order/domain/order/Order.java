@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -16,11 +17,14 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-/** 주문 (표 orders, V1). 상태 전이는 Saga 작업에서 추가한다 */
+/** 주문 (표 orders, V1). 상태 전이는 단계별로 이 클래스 메서드로 한다 */
 @Entity
 @Table(name = "orders")
 @EntityListeners(AuditingEntityListener.class)
 public class Order {
+
+    /** 결제 대기 시간. 이 시간 안에 결제하지 않으면 만료 스케줄러가 EXPIRED로 닫는다 */
+    public static final Duration PAYMENT_TIMEOUT = Duration.ofMinutes(10);
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -120,6 +124,32 @@ public class Order {
     /** 같은 Idempotency-Key 재요청이 처음 요청과 같은 내용인지 본다 (점포 이름은 비교하지 않는다) */
     public boolean hasSameContent(Long storeId, Long productId, int quantity) {
         return this.storeId.equals(storeId) && this.productId.equals(productId) && this.quantity == quantity;
+    }
+
+    /** RESERVED 반영: 상품명·단가를 스냅샷으로 남기고 금액을 확정해 결제 대기로 바꾼다 */
+    public void reserve(String productName, long unitPrice, OffsetDateTime now) {
+        requireReserving();
+        this.productName = productName;
+        this.unitPrice = unitPrice;
+        this.amount = unitPrice * quantity;
+        this.status = OrderStatus.PAYMENT_WAITING;
+        this.paymentWaitingAt = now;
+        this.paymentExpiresAt = now.plus(PAYMENT_TIMEOUT);
+    }
+
+    /** RESERVE_FAILED 반영: 재고 확보 실패로 주문을 닫는다 */
+    public void rejectReservation(OrderFailureReason reason, int availableQuantity, OffsetDateTime now) {
+        requireReserving();
+        this.status = OrderStatus.OUT_OF_STOCK;
+        this.failureReason = reason;
+        this.availableQuantity = availableQuantity;
+        this.closedAt = now;
+    }
+
+    private void requireReserving() {
+        if (status != OrderStatus.RESERVING) {
+            throw new IllegalStateException("예약 결과는 RESERVING에서만 반영한다: orderId=" + id + " status=" + status);
+        }
     }
 
     public Long getId() { return id; }

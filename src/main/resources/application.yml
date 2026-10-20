@@ -7,6 +7,8 @@ app:
   queue:
     # RESERVE·CONFIRM·RELEASE를 보내는 큐 (기획안 5장). 접두사 QUEUE_PREFIX는 필수 (기본값 없음, dev만 application-dev.yml에서 보충)
     commands: ${QUEUE_PREFIX}inventory-commands.fifo
+    # RESERVED·RESERVE_FAILED를 받는 큐 (표준 큐, DLQ는 인프라가 붙인다)
+    results: ${QUEUE_PREFIX}inventory-results
 
 freshlink:
   messaging:
@@ -35,6 +37,8 @@ spring:
     aws:
       region:
         static: ${AWS_REGION:ap-northeast-2}
+      sqs:
+        queue-not-found-strategy: fail   # 큐가 없으면 만들지 않고 실패한다 (큐는 인프라가 만든다)
 
 management:
   endpoints:

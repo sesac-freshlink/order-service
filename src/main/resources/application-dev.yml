@@ -7,3 +7,4 @@ app:
   queue:
     # dev만 접두사 기본값 허용. PC는 dev-kyungwoo-, dev 클러스터는 dev-
     commands: ${QUEUE_PREFIX:dev-}inventory-commands.fifo
+    results: ${QUEUE_PREFIX:dev-}inventory-results
