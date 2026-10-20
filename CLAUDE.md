@@ -35,7 +35,7 @@
 ✅ Java 21, Spring Boot 4.0.x, Jackson 3, Gradle 9(./gradlew). 프로필은 dev·prod만. 기준은 `.github` 레포 docs/백엔드-공통작업-인수인계.md 1장. 아직 뼈대면 README "dev 환경에서 실행하기" 안내대로 프로젝트를 만든다
 ✅ 인증: gateway가 Cognito ID 토큰을 검증하고 X-User-Id(sub, UUID 문자열)·X-User-Role·X-Store-Id 헤더로 넘긴다. 서비스는 토큰을 다시 검증하지 않는다
 ✅ 실시간 재고: 점주 화면이 3초마다 GET /owner/inventory를 조회한다 (폴링)
-✅ 주문 저장소 DynamoDB 도입은 검토 중, 미정. 어느 쪽도 가정하지 말고 사용자에게 묻는다
+✅ 주문 저장소는 MySQL로 확정 (10/15 팀 합의, `.github` docs/ai-agents.md)
 ✅ 관측성(서비스·gateway): Actuator는 앱 포트에 둔다 (관리 포트 따로 없음, management.server.port 쓰지 않음). 모든 서비스가 8080 하나를 쓴다(dev·prod 같음). 서비스끼리는 쿠버네티스 Service 이름으로 부른다(예: http://member-service:8080). health(liveness·readiness)·prometheus, Micrometer Tracing → Zipkin, JSON 로그(traceId)
 ✅ 배포 설정(gitops values, IRSA, 큐)은 이 레포에서 고치지 않는다 → freshlink-infra 담당에게 알린다
 ```
@@ -54,7 +54,7 @@
 ✅ 10분 미결제 정리 스케줄러는 ShedLock (파드 2개). 결제 승인과 경합하지 않게 상태 조건으로 갱신
 ✅ 고객 주문 조회는 customer_id = X-User-Id 확인, 점주 목록은 X-Store-Id 기준
 ✅ 토스 승인 API 호출에 타임아웃. 테스트에서 실제 토스에 접속하지 않는다 (목)
-⚠️ 주문 저장소: README는 MySQL orders 스키마지만 DynamoDB 도입을 검토 중이다 (미정). 저장소를 새로 만들거나 바꾸는 작업은 시작 전에 사용자에게 어느 쪽인지 묻는다
+✅ 주문 저장소: MySQL (orders·order_lot·payment·outbox·processed_message·shedlock). 테이블은 Flyway로만 바꾼다
 ⛔ 토스 시크릿 키는 ${TOSS_SECRET_KEY}로만. 커밋·출력 금지
 ⛔ 쪽지 형식을 바꾸면 PR에 message-spec 라벨, 합치기 전 이태우에게 알린다
 ✅ 패키지: common/(config·error·log·messaging)은 도메인과 상관없는 공통 코드, domain/<도메인>은 엔티티·서비스·API

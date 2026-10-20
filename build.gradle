@@ -39,6 +39,7 @@ dependencies {
     runtimeOnly 'com.mysql:mysql-connector-j'
     implementation platform('io.awspring.cloud:spring-cloud-aws-dependencies:4.2.0')
     implementation 'io.awspring.cloud:spring-cloud-aws-starter-sqs'              // SqsTemplate, @SqsListener (common Outbox 발행기가 쓴다)
+    runtimeOnly 'software.amazon.awssdk:sts'                                    // IRSA(웹 아이덴티티 토큰)로 AWS 자격을 받는 데 필요. 없으면 파드에서 SQS 호출 실패
     implementation 'net.javacrumbs.shedlock:shedlock-spring:7.10.1'
     implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.10.1'   // LockProvider (Outbox 발행기·만료 스케줄러)
 
