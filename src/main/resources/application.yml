@@ -39,6 +39,7 @@ spring:
         static: ${AWS_REGION:ap-northeast-2}
       sqs:
         queue-not-found-strategy: fail   # 큐가 없으면 만들지 않고 실패한다 (큐는 인프라가 만든다)
+        observation-enabled: true        # 추적(할 일 16): 쪽지 속성 traceparent로 inventory까지 같은 traceId를 잇는다
 
 management:
   endpoints:
@@ -49,5 +50,15 @@ management:
     health:
       probes:
         enabled: true             # /actuator/health/liveness, /readiness
+  # 추적(할 일 16). 요청마다 traceId를 만들어 로그에 넣고, 다른 서비스를 부를 때 traceparent 헤더를 붙인다.
+  # PC에는 Zipkin이 없어서 보내지 않는다. 클러스터에서는 gitops 차트(spring-service)가 환경 변수로 켜고 주소를 넣는다:
+  #   MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENABLED=true, MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT=http://zipkin.observability:9411/api/v2/spans
+  # JSON 로그(LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs)도 차트가 넣는다. PC 로그는 사람이 읽는 형식 그대로다.
+  tracing:
+    sampling:
+      probability: 1.0            # MVP는 요청이 적어 전부 기록
+    export:
+      zipkin:
+        enabled: false
 
 # Flyway: src/main/resources/db/migration/V1__xxx.sql 부터 담당자가 채운다. 아직 파일이 없으면 경고만 찍고 지나간다.
