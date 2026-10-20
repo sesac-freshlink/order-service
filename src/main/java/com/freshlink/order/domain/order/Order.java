@@ -172,6 +172,16 @@ public class Order {
         this.closedAt = now;
     }
 
+    /** 결제 대기 10분이 지나면 EXPIRED로 닫는다 (만료 스케줄러). 재고는 RELEASE(EXPIRED)로 돌려준다 */
+    public void expire(OffsetDateTime now) {
+        if (status != OrderStatus.PAYMENT_WAITING || paymentExpiresAt == null || now.isBefore(paymentExpiresAt)) {
+            throw new IllegalStateException("만료할 수 없다: orderId=" + id + " status=" + status);
+        }
+        this.status = OrderStatus.EXPIRED;
+        this.failureReason = OrderFailureReason.EXPIRED;
+        this.closedAt = now;
+    }
+
     private void requireApproving() {
         if (status != OrderStatus.PAYMENT_APPROVING) {
             throw new IllegalStateException("결제 결과는 PAYMENT_APPROVING에서만 반영한다: orderId=" + id + " status=" + status);
