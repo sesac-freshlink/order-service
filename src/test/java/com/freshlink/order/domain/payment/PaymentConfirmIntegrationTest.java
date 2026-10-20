@@ -237,6 +237,22 @@ class PaymentConfirmIntegrationTest {
     }
 
     @Test
+    void 다른_주문이_쓴_paymentKey면_409_PAYMENT_INFO_MISMATCH이고_토스를_부르지_않는다() throws Exception {
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        confirm("pk_shared").andExpect(status().isOk());
+        Order other = waitingOrder(customer);
+
+        confirm(customer, other.getId(), body("pk_shared", other.getOrderNo(), 3400))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PAYMENT_INFO_MISMATCH"));
+
+        assertThat(statusOf(other)).isEqualTo(OrderStatus.PAYMENT_WAITING);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE order_id = ?", Integer.class,
+                other.getId())).isZero();
+        verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+    }
+
+    @Test
     void 승인_전_검사에_걸리면_토스를_부르지_않고_상태도_그대로() throws Exception {
         confirm(UUID.randomUUID().toString(), order.getId(), body("pk", order.getOrderNo(), 3400))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ORDER_ACCESS_DENIED"));

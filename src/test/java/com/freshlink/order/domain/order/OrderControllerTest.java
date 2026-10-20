@@ -16,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -124,6 +125,19 @@ class OrderControllerTest {
                     .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         }
         verifyNoInteractions(orderService);
+    }
+
+    @Test
+    void 본문_오류_message에_칸_이름이_나온다() throws Exception {
+        // Idempotency-Key 헤더 제약 때문에 본문 오류도 메서드 검증 예외로 온다. 그래도 칸 이름이 보여야 한다
+        mockMvc.perform(valid(body("1", "\"점포\"", "10", "6")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value(startsWith("quantity: ")));
+
+        mockMvc.perform(with("abc", USER, "CUSTOMER"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(startsWith("idempotencyKey: ")));
     }
 
     @Test
