@@ -15,7 +15,9 @@ public enum OrderErrorCode implements ErrorCode {
     OUT_OF_STOCK(409, "재고가 부족합니다"),
     PAYMENT_FAILED(402, "결제에 실패했습니다"),
     PAYMENT_AMOUNT_MISMATCH(400, "결제 금액이 주문 금액과 다릅니다"),
-    SERVICE_UNAVAILABLE(503, "잠시 후 다시 시도해 주세요");
+    SERVICE_UNAVAILABLE(503, "잠시 후 다시 시도해 주세요"),
+    FORBIDDEN(403, "권한이 없습니다"),
+    IDEMPOTENCY_KEY_REUSED(409, "같은 요청 번호로 다른 주문을 만들 수 없습니다");
 
     private final int status;
     private final String message;

@@ -57,36 +57,42 @@ sequenceDiagram
 
 | ID | 기능 | API | 완료 기준 |
 | --- | --- | --- | --- |
-| U-21 | 주문 생성 | `POST /orders` | [예약 중]으로 저장되고 RESERVE 쪽지가 나간다 |
+| U-21 | 주문 생성 | `POST /orders` (헤더 `Idempotency-Key`) | [예약 중]으로 저장되고 RESERVE 쪽지가 나간다. 새 주문 201, 같은 키·같은 내용 200, 같은 키·다른 내용 409 |
 | U-22 | 결제 | `POST /orders/{id}/payment/confirm` | 토스 테스트 결제 승인 시 [결제 완료] + CONFIRM |
 | U-23 | 재고 부족 거절 | 내부 로직 | [재고 부족으로 취소]와 안내 문구 |
 | U-31 | 주문 상태 | `GET /orders/{id}` | 주문 확인 중 → 결제 대기 → 결제 완료(또는 취소). 고객 화면에는 "예약"이라는 말을 쓰지 않는다 |
 | S-50 | 신규 주문 목록 | `GET /owner/orders` | 결제 완료 주문이 최신순 |
 | E-02 | 주문 Saga | 쪽지 흐름 | 결제 실패·10분 미결제 시 예약 재고가 돌아온다 |
 
+- 경로는 서비스 안 경로다. 브라우저는 `/api/orders`로 부르고 gateway가 `/api`를 뗀다.
+- 구현된 것: U-21 주문 생성(OR-01). 요청·응답·오류 코드는 order-service API 명세를 따른다.
+
 ## 4. 데이터 모델
 
 | 표 | 주요 컬럼 |
 | --- | --- |
-| `orders` | id, customer_id, store_id, product_id, quantity, amount, status, created_at |
+| `orders` | id, order_no, customer_id, request_id, store_id, store_name, product_id, product_name, quantity, unit_price, amount, status, failure_reason, payment_expires_at, created_at |
+| `order_lot` | id, order_id, lot_id, quantity, expiry_at (RESERVED로 받은 lot) |
 | `payment` | id, order_id, payment_key, amount, status |
+| `shedlock` | 파드 2개 중 한 곳만 스케줄러·Outbox 발행기를 돌리는 잠금 |
 | `outbox`, `processed_message` | [common](https://github.com/sesac-freshlink/common) 모듈이 쓰는 표 |
 
-`order`는 SQL 예약어라 표·스키마 이름을 `orders`로 쓴다.
+`order`는 SQL 예약어라 표·스키마 이름을 `orders`로 쓴다. 표는 Flyway로 만든다(V1 주문·lot·결제·shedlock, V2 outbox·processed_message).
 
 ## 5. 폴더 구조
 
 ```
 order-service/
-├── build.gradle                       # Boot 4.0.8, Web·JPA·Validation·Actuator·MySQL·Testcontainers + common
+├── build.gradle                       # Boot 4.0.8, Web·JPA·Validation·Actuator·MySQL·Flyway·Swagger·SQS·ShedLock·Testcontainers + common 0.2.0
 ├── src/main/java/com/freshlink/order/
 │   ├── OrderServiceApplication.java
 │   ├── common/                        # 도메인과 상관없는 공통 코드
-│   │   ├── config/      # SQS, ShedLock, Swagger, 토스 클라이언트 설정
+│   │   ├── config/      # ShedLock(LockConfig), JPA Auditing, 토스 클라이언트 설정
 │   │   ├── error/       # OrderErrorCode(enum), GlobalExceptionHandler
-│   │   └── messaging/   # inventory-results 리스너, outbox 발행
+│   │   ├── messaging/   # inventory-results 리스너
+│   │   └── web/         # gateway가 넘기는 헤더 이름(AuthHeaders)
 │   └── domain/                        # 도메인별 엔티티·서비스·API
-│       ├── order/       # 주문 엔티티, 주문 API
+│       ├── order/       # 주문 엔티티·리포지토리, 주문 생성 API·서비스
 │       ├── payment/     # 토스 결제 승인
 │       ├── saga/        # 상태 전이, 실패 시 보상(RELEASE)
 │       └── scheduler/   # 10분 미결제 주문 정리
@@ -96,7 +102,8 @@ order-service/
 │   ├── application-prod.yml
 │   └── db/migration/                  # Flyway SQL. V1__init.sql 부터
 └── src/test/java/com/freshlink/order/
-    └── common/error/GlobalExceptionHandlerTest.java   # 오류 응답 모양 (DB 없이)
+    ├── common/error/GlobalExceptionHandlerTest.java   # 오류 응답 모양 (DB 없이)
+    └── domain/order/                  # 엔티티·서비스 단위, 컨트롤러(@WebMvcTest), Testcontainers 통합 테스트 (SQS는 목)
 ```
 
 ## 5-1. 오류 처리
@@ -111,7 +118,7 @@ order-service/
 
 ## 6. dev 환경에서 실행하기
 
-> Spring 뼈대(Boot 4.0.8, Gradle 9.8.1, Java 21)까지 들어 있다. 엔티티·API는 없다. Spring Cloud AWS SQS와 `com.freshlink:common` 의존성은 기능 작업 때 추가한다.
+> Boot 4.0.8, Gradle 9.8.1, Java 21. `com.freshlink:common` 0.2.0(Outbox 발행기·멱등 처리)과 Spring Cloud AWS SQS를 쓴다. RESERVE 쪽지는 `app.queue.commands`(= `${QUEUE_PREFIX}inventory-commands.fifo`)로 나간다.
 >
 > **DB 없이 IntelliJ에서 띄우기:** Docker Desktop을 켜고 `src/test/java/com/freshlink/order/TestOrderServiceApplication`을 Run 한다. DB를 따로 띄우지 않아도 MySQL 8.4 이미지를 받아 컨테이너로 띄우고 자동으로 붙는다 (Testcontainers 라이브러리 기능). main 소스 변경사항이 그대로 반영된다. RDS가 준비되면 아래처럼 `DB_URL` 환경 변수만 주고 `OrderServiceApplication`으로 실행한다.
 

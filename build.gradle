@@ -27,7 +27,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.freshlink:common:0.1.0'                               // 쪽지 DTO 7종, ErrorCode·BusinessException·ErrorResponse
+    implementation 'com.freshlink:common:0.2.0'                               // 쪽지 DTO 7종, ErrorCode·BusinessException·ErrorResponse, Outbox 발행기·멱등 처리
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'        // REST API
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'      // MySQL 접근
     implementation 'org.springframework.boot:spring-boot-starter-validation'    // @Valid
@@ -37,6 +37,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-flyway'       // 테이블은 Flyway 마이그레이션으로 관리 (db/migration/V1__ 부터)
     runtimeOnly 'org.flywaydb:flyway-mysql'
     runtimeOnly 'com.mysql:mysql-connector-j'
+    implementation platform('io.awspring.cloud:spring-cloud-aws-dependencies:4.2.0')
+    implementation 'io.awspring.cloud:spring-cloud-aws-starter-sqs'              // SqsTemplate, @SqsListener (common Outbox 발행기가 쓴다)
+    runtimeOnly 'software.amazon.awssdk:sts'                                    // IRSA(웹 아이덴티티 토큰)로 AWS 자격을 받는 데 필요. 없으면 파드에서 SQS 호출 실패
+    implementation 'net.javacrumbs.shedlock:shedlock-spring:7.10.1'
+    implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.10.1'   // LockProvider (Outbox 발행기·만료 스케줄러)
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'

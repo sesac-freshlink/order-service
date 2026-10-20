@@ -3,6 +3,15 @@
 server:
   port: 8080
 
+app:
+  queue:
+    # RESERVE·CONFIRM·RELEASE를 보내는 큐 (기획안 5장). 접두사 QUEUE_PREFIX는 필수 (기본값 없음, dev만 application-dev.yml에서 보충)
+    commands: ${QUEUE_PREFIX}inventory-commands.fifo
+
+freshlink:
+  messaging:
+    enabled: true                 # common Outbox 발행기·멱등 처리 켜기 (inventory·order만)
+
 spring:
   application:
     name: order-service
@@ -18,8 +27,14 @@ spring:
       hibernate:
         jdbc:
           time_zone: Asia/Seoul
+        timezone:
+          default_storage: NORMALIZE   # OffsetDateTime을 jdbc.time_zone(KST) 벽시계로 저장
   jackson:
     time-zone: Asia/Seoul         # 시각은 ISO-8601 +09:00
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:ap-northeast-2}
 
 management:
   endpoints:
