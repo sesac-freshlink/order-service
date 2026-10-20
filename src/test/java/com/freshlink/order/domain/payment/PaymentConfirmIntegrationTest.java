@@ -54,7 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** OR-03 결제 승인 전체 흐름을 실제 MySQL에서 확인한다. 토스 클라이언트는 목이라 실제 토스에 접속하지 않는다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
         "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
-        "spring.cloud.aws.sqs.listener.auto-startup=false"})
+        "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class PaymentConfirmIntegrationTest {

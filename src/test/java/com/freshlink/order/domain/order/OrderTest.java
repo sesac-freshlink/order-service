@@ -120,4 +120,23 @@ class OrderTest {
         assertThatThrownBy(() -> waiting().markPaid(NOW)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> waiting().failPayment(NOW)).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void 결제_대기에서_마감이_지나면_만료로_끝난다() {
+        Order order = waiting();
+
+        order.expire(NOW.plusMinutes(10));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+        assertThat(order.getFailureReason()).isEqualTo(OrderFailureReason.EXPIRED);
+        assertThat(order.getClosedAt()).isEqualTo(NOW.plusMinutes(10));
+    }
+
+    @Test
+    void 마감_전이거나_결제_대기가_아니면_만료할_수_없다() {
+        assertThatThrownBy(() -> waiting().expire(NOW.plusMinutes(9))).isInstanceOf(IllegalStateException.class);
+        Order approving = waiting();
+        approving.startApproval(NOW);
+        assertThatThrownBy(() -> approving.expire(NOW.plusMinutes(30))).isInstanceOf(IllegalStateException.class);
+    }
 }

@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
         "app.queue.commands=test-inventory-commands.fifo",
         "app.queue.results=test-inventory-results",
-        "spring.cloud.aws.sqs.listener.auto-startup=false"})
+        "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class ReservationResultIntegrationTest {
 

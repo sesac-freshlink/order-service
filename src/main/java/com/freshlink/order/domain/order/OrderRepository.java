@@ -3,6 +3,8 @@ package com.freshlink.order.domain.order;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import java.time.OffsetDateTime;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -20,4 +22,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     /** 점포의 한 상태 주문을 결제 시각 최신순으로 (인덱스 idx_orders_store_status_paid) */
     List<Order> findByStoreIdAndStatusOrderByPaidAtDescIdDesc(Long storeId, OrderStatus status);
+
+    /** 결제 마감이 지난 주문 ID, 마감이 이른 순 (인덱스 idx_orders_status_expires) */
+    @Query("select o.id from Order o where o.status = :status and o.paymentExpiresAt <= :now order by o.paymentExpiresAt")
+    List<Long> findDueIds(@Param("status") OrderStatus status, @Param("now") OffsetDateTime now, Pageable pageable);
 }
