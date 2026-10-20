@@ -139,4 +139,16 @@ class OrderTest {
         approving.startApproval(NOW);
         assertThatThrownBy(() -> approving.expire(NOW.plusMinutes(30))).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void 예약_중에_멈춘_주문은_수동으로_닫으면_만료로_끝난다() {
+        Order order = Order.create("c", "k", 1L, "점포", 10L, 2);
+
+        order.closeStuck(NOW);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+        assertThat(order.getFailureReason()).isEqualTo(OrderFailureReason.EXPIRED);
+        assertThat(order.getClosedAt()).isEqualTo(NOW);
+        assertThatThrownBy(() -> waiting().closeStuck(NOW)).isInstanceOf(IllegalStateException.class);
+    }
 }

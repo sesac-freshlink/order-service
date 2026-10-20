@@ -1,10 +1,6 @@
 package com.freshlink.order.domain.payment;
 
 import com.freshlink.common.error.BusinessException;
-import com.freshlink.common.message.command.ConfirmMessage;
-import com.freshlink.common.message.command.ReleaseMessage;
-import com.freshlink.common.message.command.ReleaseReason;
-import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.domain.order.Order;
 import com.freshlink.order.domain.order.OrderRepository;
@@ -19,7 +15,6 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -42,21 +37,19 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final TossPaymentsClient toss;
-    private final OutboxWriter outboxWriter;
+    private final PaymentResultWriter resultWriter;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
-    private final String commandsQueue;
 
     public PaymentService(OrderRepository orderRepository, PaymentRepository paymentRepository,
-                          TossPaymentsClient toss, OutboxWriter outboxWriter, TransactionTemplate transactionTemplate,
-                          Clock clock, @Value("${app.queue.commands}") String commandsQueue) {
+                          TossPaymentsClient toss, PaymentResultWriter resultWriter,
+                          TransactionTemplate transactionTemplate, Clock clock) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
         this.toss = toss;
-        this.outboxWriter = outboxWriter;
+        this.resultWriter = resultWriter;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
-        this.commandsQueue = commandsQueue;
     }
 
     public PaymentConfirmResponse confirm(String customerId, Long orderId, PaymentConfirmRequest req) {
@@ -133,16 +126,11 @@ public class PaymentService {
         switch (result.outcome()) {
             case APPROVED -> {
                 OffsetDateTime paidAt = result.approvedAt() != null ? result.approvedAt() : now;
-                order.markPaid(paidAt);
-                payment.approve(result.tossStatus(), result.method(), paidAt);
-                outboxWriter.save(commandsQueue, ConfirmMessage.of(orderId, order.getStoreId()));
+                resultWriter.paid(order, payment, result.tossStatus(), result.method(), paidAt);
                 log.info("결제 완료 orderId={} amount={}", orderId, order.getAmount());
             }
             case DEFINITE_FAILURE -> {
-                order.failPayment(now);
-                payment.fail(result.errorCode(), result.errorMessage());
-                outboxWriter.save(commandsQueue,
-                        ReleaseMessage.of(orderId, order.getStoreId(), ReleaseReason.PAYMENT_FAILED));
+                resultWriter.failed(order, payment, result.errorCode(), result.errorMessage(), now);
                 log.info("결제 실패 orderId={} code={} message={}", orderId, result.errorCode(), result.errorMessage());
             }
             case CONFIG_ERROR -> {

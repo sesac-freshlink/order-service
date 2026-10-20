@@ -182,6 +182,14 @@ public class Order {
         this.closedAt = now;
     }
 
+    /** OP-02 재고 확보 결과가 오지 않아 RESERVING에 멈춘 주문을 닫는다. 재고는 RELEASE(EXPIRED)로 돌려준다 */
+    public void closeStuck(OffsetDateTime now) {
+        requireReserving();
+        this.status = OrderStatus.EXPIRED;
+        this.failureReason = OrderFailureReason.EXPIRED;
+        this.closedAt = now;
+    }
+
     private void requireApproving() {
         if (status != OrderStatus.PAYMENT_APPROVING) {
             throw new IllegalStateException("결제 결과는 PAYMENT_APPROVING에서만 반영한다: orderId=" + id + " status=" + status);
