@@ -2,6 +2,7 @@ package com.freshlink.order.domain.payment.toss;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -76,8 +77,17 @@ public class TossPaymentsClient {
         }
     }
 
+    /** 승인 시각은 표시용이다. 형식이 낯설어도 승인 성공(DONE)을 결과 불명으로 바꾸지 않는다 (null이면 서버 시각을 쓴다) */
     private static OffsetDateTime parse(String approvedAt) {
-        return approvedAt == null ? null : OffsetDateTime.parse(approvedAt);
+        if (approvedAt == null) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(approvedAt);
+        } catch (DateTimeParseException e) {
+            log.warn("토스 approvedAt 형식을 해석할 수 없다 approvedAt={}", approvedAt);
+            return null;
+        }
     }
 
     /** 토스 Payment 객체 중 쓰는 필드만 */

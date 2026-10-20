@@ -136,4 +136,16 @@ class TossPaymentsClientTest {
         assertThat(empty.isConfigured()).isFalse();
         assertThat(client.isConfigured()).isTrue();
     }
+
+    @Test
+    void 승인_시각_형식이_낯설어도_승인_성공으로_본다() {
+        server.expect(requestTo(BASE + "/v1/payments/confirm"))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\",\"approvedAt\":\"2026/10/20 15:35\"}",
+                        MediaType.APPLICATION_JSON));
+
+        TossConfirmResult r = confirm();
+
+        assertThat(r.outcome()).isEqualTo(TossOutcome.APPROVED);
+        assertThat(r.approvedAt()).isNull();
+    }
 }
