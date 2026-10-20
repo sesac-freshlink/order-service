@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.validation.method.ParameterErrors;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
@@ -68,15 +67,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                     .collect(Collectors.joining(", "));
         } else if (ex instanceof HandlerMethodValidationException e) {
             code = "VALIDATION_ERROR";
-            // 헤더 같은 다른 파라미터에 제약이 있으면 @Valid 본문 오류도 이 예외로 온다.
-            // 본문(ParameterErrors)은 칸 이름(quantity 등)을, 그 밖의 파라미터는 파라미터 이름을 쓴다
             message = e.getParameterValidationResults().stream()
-                    .flatMap(r -> r instanceof ParameterErrors errors
-                            ? errors.getFieldErrors().stream()
-                                    .map(f -> f.getField() + ": " + f.getDefaultMessage())
-                            : r.getResolvableErrors().stream()
-                                    .map(err -> r.getMethodParameter().getParameterName() + ": "
-                                            + err.getDefaultMessage()))
+                    .flatMap(r -> r.getResolvableErrors().stream()
+                            .map(err -> r.getMethodParameter().getParameterName() + ": " + err.getDefaultMessage()))
                     .collect(Collectors.joining(", "));
         }
 

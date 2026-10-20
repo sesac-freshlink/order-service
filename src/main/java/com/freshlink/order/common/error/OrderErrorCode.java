@@ -9,6 +9,7 @@ import com.freshlink.common.error.ErrorCode;
 public enum OrderErrorCode implements ErrorCode {
 
     // 순서·이름·문구는 order-service API 명세 8장과 같다
+    VALIDATION_ERROR(400, "Idempotency-Key: UUID 형식이어야 합니다"),
     ORDER_NO_MISMATCH(400, "주문 정보가 일치하지 않습니다"),
     PAYMENT_AMOUNT_MISMATCH(400, "결제 금액이 일치하지 않습니다"),
     FORBIDDEN(403, "권한이 없습니다"),

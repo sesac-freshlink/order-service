@@ -7,9 +7,8 @@ import com.freshlink.order.domain.payment.PaymentConfirmRequest;
 import com.freshlink.order.domain.payment.PaymentConfirmResponse;
 import com.freshlink.order.domain.payment.PaymentService;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,8 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/orders")
 public class OrderController {
 
-    private static final String UUID_REGEX =
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     private static final int USER_ID_MAX_LENGTH = 36;
 
     private final OrderService orderService;
@@ -39,11 +38,11 @@ public class OrderController {
     /** OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200 */
     @PostMapping
     public ResponseEntity<CreateOrderResponse> create(
-            @RequestHeader(name = AuthHeaders.IDEMPOTENCY_KEY, required = false)
-            @NotNull @Pattern(regexp = UUID_REGEX) String idempotencyKey,
+            @RequestHeader(name = AuthHeaders.IDEMPOTENCY_KEY, required = false) String idempotencyKey,
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
             @Valid @RequestBody CreateOrderRequest request) {
+        requireIdempotencyKey(idempotencyKey);
         requireCustomer(userId, role);
         CreateOrderResult result = orderService.create(userId, idempotencyKey.toLowerCase(Locale.ROOT), request);
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
@@ -69,6 +68,16 @@ public class OrderController {
             @Valid @RequestBody PaymentConfirmRequest request) {
         requireCustomer(userId, role);
         return paymentService.confirm(userId, orderId, request);
+    }
+
+    /**
+     * 주문 요청 키: 없거나 UUID가 아니면 400 VALIDATION_ERROR.
+     * 헤더에 @NotNull·@Pattern을 붙이면 본문 @Valid 오류까지 메서드 검증 예외로 바뀌어 칸 이름이 사라지므로 여기서 직접 본다
+     */
+    private static void requireIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || !UUID_PATTERN.matcher(idempotencyKey).matches()) {
+            throw new BusinessException(OrderErrorCode.VALIDATION_ERROR);
+        }
     }
 
     /** 고객 API 공통: 역할이 CUSTOMER이고 X-User-Id가 있어야 한다. 아니면 403 FORBIDDEN */
