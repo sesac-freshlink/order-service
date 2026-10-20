@@ -51,7 +51,7 @@ sequenceDiagram
 | 결제 실패 | RELEASE 쪽지를 보내 예약 재고를 돌려놓는다 | `PAYMENT_FAILED` |
 | 10분 안에 결제 안 함 | 스케줄러가 오래된 결제 대기 주문에 RELEASE를 보낸다 | `EXPIRED` |
 
-주문 상태: `RESERVING` → `PAYMENT_WAITING` → `PAID` (실패 시 `OUT_OF_STOCK` / `PAYMENT_FAILED` / `EXPIRED`)
+주문 상태: `RESERVING` → `PAYMENT_WAITING` → `PAYMENT_APPROVING` → `PAID` (실패 시 `OUT_OF_STOCK` / `PAYMENT_FAILED` / `EXPIRED`)
 
 ## 3. 기능과 API
 
