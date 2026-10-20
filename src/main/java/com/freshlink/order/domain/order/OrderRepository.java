@@ -1,6 +1,7 @@
 package com.freshlink.order.domain.order;
 
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -16,4 +17,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
+    /** 점포의 한 상태 주문을 결제 시각 최신순으로 (인덱스 idx_orders_store_status_paid) */
+    List<Order> findByStoreIdAndStatusOrderByPaidAtDescIdDesc(Long storeId, OrderStatus status);
 }

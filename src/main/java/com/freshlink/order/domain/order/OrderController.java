@@ -57,7 +57,7 @@ public class OrderController {
 
     /** 고객 API 공통: 역할이 CUSTOMER이고 X-User-Id가 있어야 한다. 아니면 403 FORBIDDEN */
     private static void requireCustomer(String userId, String role) {
-        if (!AuthHeaders.ROLE_CUSTOMER.equals(role)
+        if (!AuthHeaders.hasRole(role, AuthHeaders.ROLE_CUSTOMER)
                 || userId == null || userId.isBlank() || userId.length() > USER_ID_MAX_LENGTH) {
             throw new BusinessException(OrderErrorCode.FORBIDDEN);
         }

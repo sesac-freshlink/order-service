@@ -4,6 +4,7 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.GlobalExceptionHandler;
 import com.freshlink.order.common.error.OrderErrorCode;
 import java.time.OffsetDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -24,7 +25,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(OrderController.class)
+@WebMvcTest({OrderController.class, OwnerOrderController.class})
 @Import(GlobalExceptionHandler.class)
 class OrderControllerTest {
 
@@ -240,5 +241,69 @@ class OrderControllerTest {
     void 주문_ID가_숫자가_아니면_400() throws Exception {
         mockMvc.perform(getOrder("abc", USER, "CUSTOMER")).andExpect(status().isBadRequest());
         verifyNoInteractions(orderService);
+    }
+
+    // ---------------------------------------------------------------- OR-04 점주 신규 주문 목록
+
+    private MockHttpServletRequestBuilder ownerOrders(String role, String storeId) {
+        MockHttpServletRequestBuilder b = get("/owner/orders").header("X-User-Id", USER);
+        if (role != null) b.header("X-User-Role", role);
+        if (storeId != null) b.header("X-Store-Id", storeId);
+        return b;
+    }
+
+    private Order paid(long id, String paidAt) {
+        Order o = order(id);
+        o.reserve("매운 컵라면 115g", 1700L, OffsetDateTime.parse("2026-10-20T06:00:00Z"));
+        ReflectionTestUtils.setField(o, "status", OrderStatus.PAID);
+        ReflectionTestUtils.setField(o, "paidAt", OffsetDateTime.parse(paidAt));
+        return o;
+    }
+
+    @Test
+    void 점주_목록은_200과_6개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
+        when(orderService.listPaidForStore(7L)).thenReturn(List.of(paid(123L, "2026-10-20T06:35:10Z")));
+
+        mockMvc.perform(ownerOrders("OWNER", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].orderId").value(123))
+                .andExpect(jsonPath("$[0].orderNo").value("FL-20261020-000123"))
+                .andExpect(jsonPath("$[0].productName").value("매운 컵라면 115g"))
+                .andExpect(jsonPath("$[0].quantity").value(2))
+                .andExpect(jsonPath("$[0].amount").value(3400))
+                .andExpect(jsonPath("$[0].paidAt").value("2026-10-20T15:35:10+09:00"))
+                .andExpect(jsonPath("$[0].customerId").doesNotExist());
+    }
+
+    @Test
+    void 점주가_아니면_403_FORBIDDEN() throws Exception {
+        mockMvc.perform(ownerOrders("CUSTOMER", "7"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(ownerOrders(null, "7"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        verifyNoInteractions(orderService);
+    }
+
+    @Test
+    void 점포가_없거나_비었거나_숫자가_아니면_403_STORE_NOT_LINKED() throws Exception {
+        for (String storeId : new String[] {null, "", " ", "abc", "0", "-1"}) {
+            mockMvc.perform(ownerOrders("OWNER", storeId))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("STORE_NOT_LINKED"));
+        }
+        verifyNoInteractions(orderService);
+    }
+
+    @Test
+    void 그룹이_여럿이면_쉼표로_오고_그중_하나만_맞으면_된다() throws Exception {
+        when(orderService.listPaidForStore(7L)).thenReturn(List.of());
+        when(orderService.get(USER, 123L)).thenReturn(order(123L));
+
+        mockMvc.perform(ownerOrders("CUSTOMER, OWNER", "7")).andExpect(status().isOk());
+        mockMvc.perform(getOrder("123", USER, "OWNER,CUSTOMER")).andExpect(status().isOk());
+        mockMvc.perform(getOrder("123", USER, "OWNERX,ADMIN")).andExpect(status().isForbidden());
     }
 }

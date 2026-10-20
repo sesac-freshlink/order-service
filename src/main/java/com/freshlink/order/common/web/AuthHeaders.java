@@ -13,4 +13,17 @@ public final class AuthHeaders {
 
     private AuthHeaders() {
     }
+
+    /** X-User-Role에 그 역할이 있는지 본다. 그룹이 여럿이면 gateway가 쉼표로 이어 보낸다 (예: "CUSTOMER,OWNER") */
+    public static boolean hasRole(String roleHeader, String role) {
+        if (roleHeader == null) {
+            return false;
+        }
+        for (String r : roleHeader.split(",")) {
+            if (r.trim().equals(role)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

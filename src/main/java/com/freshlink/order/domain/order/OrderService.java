@@ -6,6 +6,7 @@ import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.common.error.OrderErrorCode;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,6 +66,12 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED);
         }
         return order;
+    }
+
+    /** OR-04 점주 신규 주문 목록: 그 점포의 PAID 주문, 결제 완료 시각 최신순 (페이지 없음) */
+    @Transactional(readOnly = true)
+    public List<Order> listPaidForStore(Long storeId) {
+        return orderRepository.findByStoreIdAndStatusOrderByPaidAtDescIdDesc(storeId, OrderStatus.PAID);
     }
 
     /** 주문 저장, 주문번호 채우기, RESERVE 쪽지 outbox 저장을 한 트랜잭션으로 한다 */
