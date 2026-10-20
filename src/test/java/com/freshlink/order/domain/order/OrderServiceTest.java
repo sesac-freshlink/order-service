@@ -4,6 +4,7 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -143,5 +144,13 @@ class OrderServiceTest {
         assertThatThrownBy(() -> service.get(CUSTOMER, 5L))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.code()).isEqualTo("ORDER_NOT_FOUND"));
+    }
+
+    @Test
+    void 점주_목록은_그_점포의_PAID_주문을_결제_최신순으로_찾는다() {
+        when(orderRepository.findByStoreIdAndStatusOrderByPaidAtDescIdDesc(7L, OrderStatus.PAID))
+                .thenReturn(List.of(saved(2L), saved(1L)));
+
+        assertThat(service.listPaidForStore(7L)).extracting(Order::getId).containsExactly(2L, 1L);
     }
 }
