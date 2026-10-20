@@ -129,7 +129,7 @@ class OrderControllerTest {
 
     @Test
     void 본문_오류_message에_칸_이름이_나온다() throws Exception {
-        // 본문 오류는 칸 이름, 키 오류는 헤더 이름이 message 앞에 나온다
+        // 본문 오류는 칸 이름, 키 오류는 idempotencyKey가 message 앞에 나온다
         mockMvc.perform(valid(body("1", "\"점포\"", "10", "6")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
@@ -137,7 +137,7 @@ class OrderControllerTest {
 
         mockMvc.perform(with("abc", USER, "CUSTOMER"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(startsWith("Idempotency-Key: ")));
+                .andExpect(jsonPath("$.message").value(startsWith("idempotencyKey: ")));
     }
 
     @Test
