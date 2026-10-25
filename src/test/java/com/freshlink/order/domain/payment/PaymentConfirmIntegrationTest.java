@@ -9,6 +9,7 @@ import com.freshlink.common.message.result.ReservedLot;
 import com.freshlink.common.message.result.ReservedMessage;
 import com.freshlink.order.TestcontainersConfiguration;
 import com.freshlink.order.domain.order.Order;
+import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
 import com.freshlink.order.domain.order.ReservationResultHandler;
@@ -24,6 +25,12 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +42,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -43,6 +51,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -65,12 +74,15 @@ class PaymentConfirmIntegrationTest {
 
     @Autowired
     MockMvc mockMvc;
-    @Autowired
+    /** 스파이지만 따로 정하지 않으면 실제 저장소 그대로다. 만료와 승인 순서를 맞추는 테스트에서만 끼어든다 */
+    @MockitoSpyBean
     OrderRepository orderRepository;
     @Autowired
     ReservationResultHandler reservationResultHandler;
     @Autowired
     JdbcTemplate jdbc;
+    @Autowired
+    OrderExpiryService expiryService;
 
     @MockitoBean
     SqsTemplate sqsTemplate;
@@ -224,6 +236,88 @@ class PaymentConfirmIntegrationTest {
 
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
         assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+    }
+
+    @Test
+    void 같은_주문에_승인_요청이_동시에_와도_토스는_한_번만_부르고_결제는_한_건() throws Exception {
+        // 첫 요청이 토스 응답을 기다리는(PAYMENT_APPROVING 커밋 뒤) 동안 두 번째 요청을 보낸다
+        CountDownLatch inToss = new CountDownLatch(1);
+        CountDownLatch releaseToss = new CountDownLatch(1);
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenAnswer(inv -> {
+            inToss.countDown();
+            releaseToss.await(30, TimeUnit.SECONDS);
+            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT);
+        });
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> first = pool.submit(() -> confirm("pk_dup").andReturn().getResponse().getStatus());
+            assertThat(inToss.await(30, TimeUnit.SECONDS)).isTrue();
+
+            confirm("pk_dup")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("PAYMENT_APPROVING"));
+
+            releaseToss.countDown();
+            assertThat(first.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            releaseToss.countDown();
+            pool.shutdownNow();
+        }
+
+        verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE order_id = ?", Integer.class,
+                order.getId())).isEqualTo(1);
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
+        assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+        assertThat(outboxPayloads("RELEASE")).isEmpty();
+    }
+
+    @Test
+    void 토스_승인_중에_결제_마감이_지나도_만료되지_않고_승인_결과대로_끝난다() throws Exception {
+        // 토스 응답을 기다리는 사이(PAYMENT_APPROVING 커밋 뒤) 마감이 지나고 만료 스케줄러가 돈다
+        AtomicReference<OrderStatus> statusDuringToss = new AtomicReference<>();
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenAnswer(inv -> {
+            jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                    NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+            expiryService.expireDue();
+            statusDuringToss.set(statusOf(order));
+            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT);
+        });
+
+        confirm("pk_race").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+        assertThat(statusDuringToss.get()).isEqualTo(OrderStatus.PAYMENT_APPROVING);
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
+        assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+        assertThat(outboxPayloads("RELEASE")).isEmpty();
+    }
+
+    @Test
+    void 만료가_주문을_고른_뒤_승인이_먼저_끝나면_만료는_그_주문을_건너뛴다() throws Exception {
+        // 만료가 PAYMENT_WAITING 주문 번호를 고른 직후, 잠그기 전에 승인이 끝까지 커밋되는 순서를 만든다.
+        // 시계가 고정이라 마감을 지난 값으로 두어 골라지게 한 뒤, 승인 직전에 마감을 되돌렸다가 승인 뒤 다시 지난 값으로 둔다
+        jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        doAnswer(inv -> {
+            // 저장소 프록시는 실제 메서드를 대신 부를 수 없어 같은 조건(findDueIds)을 SQL로 고른다
+            List<Long> ids = jdbc.queryForList("SELECT id FROM orders WHERE status = 'PAYMENT_WAITING' "
+                    + "AND payment_expires_at <= ? ORDER BY payment_expires_at", Long.class, NOW.toLocalDateTime());
+            assertThat(ids).contains(order.getId());
+            jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                    NOW.plusMinutes(10).toLocalDateTime(), order.getId());
+            confirm("pk_after_pick").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+            // 승인이 끝나면 다시 마감 지남으로 둔다. 만료가 상태(PAYMENT_WAITING) 확인만으로 건너뛰는지 본다
+            jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                    NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+            return ids;
+        }).when(orderRepository).findDueIds(any(), any(), any());
+
+        expiryService.expireDue();
+
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
+        assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+        assertThat(outboxPayloads("RELEASE")).isEmpty();
     }
 
     @Test
