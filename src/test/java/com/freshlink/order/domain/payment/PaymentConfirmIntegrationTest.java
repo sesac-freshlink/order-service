@@ -9,6 +9,7 @@ import com.freshlink.common.message.result.ReservedLot;
 import com.freshlink.common.message.result.ReservedMessage;
 import com.freshlink.order.TestcontainersConfiguration;
 import com.freshlink.order.domain.order.Order;
+import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
 import com.freshlink.order.domain.order.ReservationResultHandler;
@@ -21,9 +22,16 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -71,6 +79,8 @@ class PaymentConfirmIntegrationTest {
     ReservationResultHandler reservationResultHandler;
     @Autowired
     JdbcTemplate jdbc;
+    @Autowired
+    OrderExpiryService expiryService;
 
     @MockitoBean
     SqsTemplate sqsTemplate;
@@ -224,6 +234,55 @@ class PaymentConfirmIntegrationTest {
 
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
         assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+    }
+
+    @Test
+    void 같은_주문에_승인_요청이_동시에_와도_토스는_한_번만_부르고_결제는_한_건() throws Exception {
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Integer>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    start.await();
+                    return confirm("pk_dup").andReturn().getResponse().getStatus();
+                }));
+            }
+            start.countDown();
+            for (Future<Integer> r : results) {
+                assertThat(r.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE order_id = ?", Integer.class,
+                order.getId())).isEqualTo(1);
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
+        assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+        assertThat(outboxPayloads("RELEASE")).isEmpty();
+    }
+
+    @Test
+    void 토스_승인_중에_결제_마감이_지나도_만료되지_않고_승인_결과대로_끝난다() throws Exception {
+        // 토스 응답을 기다리는 사이(PAYMENT_APPROVING 커밋 뒤) 마감이 지나고 만료 스케줄러가 돈다
+        AtomicReference<OrderStatus> statusDuringToss = new AtomicReference<>();
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenAnswer(inv -> {
+            jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                    NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+            expiryService.expireDue();
+            statusDuringToss.set(statusOf(order));
+            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT);
+        });
+
+        confirm("pk_race").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+        assertThat(statusDuringToss.get()).isEqualTo(OrderStatus.PAYMENT_APPROVING);
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
+        assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+        assertThat(outboxPayloads("RELEASE")).isEmpty();
     }
 
     @Test
