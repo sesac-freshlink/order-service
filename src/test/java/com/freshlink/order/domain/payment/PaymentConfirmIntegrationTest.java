@@ -42,6 +42,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -50,6 +51,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -72,7 +74,8 @@ class PaymentConfirmIntegrationTest {
 
     @Autowired
     MockMvc mockMvc;
-    @Autowired
+    /** 스파이지만 따로 정하지 않으면 실제 저장소 그대로다. 만료와 승인 순서를 맞추는 테스트에서만 끼어든다 */
+    @MockitoSpyBean
     OrderRepository orderRepository;
     @Autowired
     ReservationResultHandler reservationResultHandler;
@@ -284,6 +287,31 @@ class PaymentConfirmIntegrationTest {
         confirm("pk_race").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
 
         assertThat(statusDuringToss.get()).isEqualTo(OrderStatus.PAYMENT_APPROVING);
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
+        assertThat(outboxPayloads("CONFIRM")).hasSize(1);
+        assertThat(outboxPayloads("RELEASE")).isEmpty();
+    }
+
+    @Test
+    void 만료가_주문을_고른_뒤_승인이_먼저_끝나면_만료는_그_주문을_건너뛴다() throws Exception {
+        // 만료가 PAYMENT_WAITING 주문 번호를 고른 직후, 잠그기 전에 승인이 끝까지 커밋되는 순서를 만든다.
+        // 시계가 고정이라 마감을 지난 값으로 두어 골라지게 한 뒤, 승인 직전에 마감을 되돌린다
+        jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        doAnswer(inv -> {
+            // 저장소 프록시는 실제 메서드를 대신 부를 수 없어 같은 조건(findDueIds)을 SQL로 고른다
+            List<Long> ids = jdbc.queryForList("SELECT id FROM orders WHERE status = 'PAYMENT_WAITING' "
+                    + "AND payment_expires_at <= ? ORDER BY payment_expires_at", Long.class, NOW.toLocalDateTime());
+            assertThat(ids).contains(order.getId());
+            jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                    NOW.plusMinutes(10).toLocalDateTime(), order.getId());
+            confirm("pk_after_pick").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+            return ids;
+        }).when(orderRepository).findDueIds(any(), any(), any());
+
+        expiryService.expireDue();
+
         assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
         assertThat(outboxPayloads("CONFIRM")).hasSize(1);
         assertThat(outboxPayloads("RELEASE")).isEmpty();
