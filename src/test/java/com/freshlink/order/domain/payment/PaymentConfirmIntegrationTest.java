@@ -295,7 +295,7 @@ class PaymentConfirmIntegrationTest {
     @Test
     void 만료가_주문을_고른_뒤_승인이_먼저_끝나면_만료는_그_주문을_건너뛴다() throws Exception {
         // 만료가 PAYMENT_WAITING 주문 번호를 고른 직후, 잠그기 전에 승인이 끝까지 커밋되는 순서를 만든다.
-        // 시계가 고정이라 마감을 지난 값으로 두어 골라지게 한 뒤, 승인 직전에 마감을 되돌린다
+        // 시계가 고정이라 마감을 지난 값으로 두어 골라지게 한 뒤, 승인 직전에 마감을 되돌렸다가 승인 뒤 다시 지난 값으로 둔다
         jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
                 NOW.minusSeconds(1).toLocalDateTime(), order.getId());
         tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
@@ -307,6 +307,9 @@ class PaymentConfirmIntegrationTest {
             jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
                     NOW.plusMinutes(10).toLocalDateTime(), order.getId());
             confirm("pk_after_pick").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+            // 승인이 끝나면 다시 마감 지남으로 둔다. 만료가 상태(PAYMENT_WAITING) 확인만으로 건너뛰는지 본다
+            jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
+                    NOW.minusSeconds(1).toLocalDateTime(), order.getId());
             return ids;
         }).when(orderRepository).findDueIds(any(), any(), any());
 
