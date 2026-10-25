@@ -22,7 +22,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -238,22 +237,27 @@ class PaymentConfirmIntegrationTest {
 
     @Test
     void 같은_주문에_승인_요청이_동시에_와도_토스는_한_번만_부르고_결제는_한_건() throws Exception {
-        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
-        ExecutorService pool = Executors.newFixedThreadPool(2);
+        // 첫 요청이 토스 응답을 기다리는(PAYMENT_APPROVING 커밋 뒤) 동안 두 번째 요청을 보낸다
+        CountDownLatch inToss = new CountDownLatch(1);
+        CountDownLatch releaseToss = new CountDownLatch(1);
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenAnswer(inv -> {
+            inToss.countDown();
+            releaseToss.await(30, TimeUnit.SECONDS);
+            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT);
+        });
+        ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
-            CountDownLatch start = new CountDownLatch(1);
-            List<Future<Integer>> results = new ArrayList<>();
-            for (int i = 0; i < 2; i++) {
-                results.add(pool.submit(() -> {
-                    start.await();
-                    return confirm("pk_dup").andReturn().getResponse().getStatus();
-                }));
-            }
-            start.countDown();
-            for (Future<Integer> r : results) {
-                assertThat(r.get(30, TimeUnit.SECONDS)).isEqualTo(200);
-            }
+            Future<Integer> first = pool.submit(() -> confirm("pk_dup").andReturn().getResponse().getStatus());
+            assertThat(inToss.await(30, TimeUnit.SECONDS)).isTrue();
+
+            confirm("pk_dup")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("PAYMENT_APPROVING"));
+
+            releaseToss.countDown();
+            assertThat(first.get(30, TimeUnit.SECONDS)).isEqualTo(200);
         } finally {
+            releaseToss.countDown();
             pool.shutdownNow();
         }
 
