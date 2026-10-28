@@ -23,6 +23,7 @@ public class Payment {
     private static final int ERROR_CODE_MAX = 80;
     private static final int ERROR_MESSAGE_MAX = 500;
     private static final int SHORT_MAX = 30;
+    private static final int RECEIPT_URL_MAX = 500;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,6 +60,9 @@ public class Payment {
     @Column(name = "approved_at")
     private OffsetDateTime approvedAt;
 
+    @Column(name = "receipt_url", length = RECEIPT_URL_MAX)
+    private String receiptUrl;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -81,11 +85,13 @@ public class Payment {
         return p;
     }
 
-    public void approve(String tossStatus, String method, OffsetDateTime approvedAt) {
+    /** 승인 성공. 영수증 주소는 500자를 넘으면 잘린 주소가 되므로 남기지 않는다 */
+    public void approve(String tossStatus, String method, OffsetDateTime approvedAt, String receiptUrl) {
         this.status = PaymentStatus.DONE;
         this.tossStatus = cut(tossStatus, SHORT_MAX);
         this.method = cut(method, SHORT_MAX);
         this.approvedAt = approvedAt;
+        this.receiptUrl = receiptUrl == null || receiptUrl.length() > RECEIPT_URL_MAX ? null : receiptUrl;
     }
 
     public void fail(String errorCode, String errorMessage) {
@@ -114,6 +120,7 @@ public class Payment {
     public String getErrorCode() { return errorCode; }
     public String getErrorMessage() { return errorMessage; }
     public OffsetDateTime getApprovedAt() { return approvedAt; }
+    public String getReceiptUrl() { return receiptUrl; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

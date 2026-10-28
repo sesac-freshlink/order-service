@@ -25,9 +25,10 @@ public class PaymentResultWriter {
     }
 
     /** PAID + CONFIRM */
-    public void paid(Order order, Payment payment, String tossStatus, String method, OffsetDateTime paidAt) {
+    public void paid(Order order, Payment payment, String tossStatus, String method, String receiptUrl,
+                     OffsetDateTime paidAt) {
         order.markPaid(paidAt);
-        payment.approve(tossStatus, method, paidAt);
+        payment.approve(tossStatus, method, paidAt, receiptUrl);
         outboxWriter.save(commandsQueue, ConfirmMessage.of(order.getId(), order.getStoreId()));
     }
 

@@ -3,7 +3,11 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.outbox.OutboxWriter;
+import com.freshlink.order.domain.payment.PaymentRepository;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +41,8 @@ class OrderServiceTest {
     @BeforeEach
     void setUp() {
         TransactionTemplate tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
-        service = new OrderService(orderRepository, outboxWriter, tx, QUEUE);
+        service = new OrderService(orderRepository, mock(PaymentRepository.class), outboxWriter, tx, QUEUE,
+                Clock.fixed(Instant.parse("2026-10-20T01:00:00Z"), ZoneId.of("Asia/Seoul")));
     }
 
     private CreateOrderRequest request(int quantity) {

@@ -47,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OpsIntegrationTest {
 
     private static final OffsetDateTime APPROVED_AT = OffsetDateTime.parse("2026-10-20T15:35:10+09:00");
+    private static final String RECEIPT = "https://dashboard.tosspayments.com/receipt/redirection?transactionId=tviva_1";
 
     @Autowired
     MockMvc mockMvc;
@@ -102,7 +103,7 @@ class OpsIntegrationTest {
     /** 이 주문과 맞는 토스 결제 (주문번호 FL-20261020-{id}, 금액 3400) */
     private void tossSays(long orderId, String tossStatus) {
         when(toss.lookup(any())).thenReturn(
-                TossLookupResult.found(tossStatus, "카드", APPROVED_AT, "FL-20261020-" + orderId, 3400L));
+                TossLookupResult.found(tossStatus, "카드", APPROVED_AT, RECEIPT, "FL-20261020-" + orderId, 3400L));
     }
 
     // ---------------------------------------------------------------- OP-01
@@ -121,7 +122,8 @@ class OpsIntegrationTest {
         assertThat(statusOf(id)).isEqualTo(OrderStatus.PAID);
         assertThat(outboxOf(id, "CONFIRM")).hasSize(1);
         Map<String, Object> payment = jdbc.queryForMap("SELECT * FROM payment WHERE order_id = ?", id);
-        assertThat(payment).containsEntry("status", "DONE").containsEntry("toss_status", "DONE");
+        assertThat(payment).containsEntry("status", "DONE").containsEntry("toss_status", "DONE")
+                .containsEntry("receipt_url", RECEIPT);
         verify(toss).lookup("pk_" + id);
     }
 
@@ -163,12 +165,12 @@ class OpsIntegrationTest {
     void 토스_결제의_주문번호나_금액이_다르면_그대로_둔다() throws Exception {
         long otherOrderNo = order("PAYMENT_APPROVING");
         when(toss.lookup(any())).thenReturn(
-                TossLookupResult.found("DONE", "카드", APPROVED_AT, "FL-20261020-999999", 3400L));
+                TossLookupResult.found("DONE", "카드", APPROVED_AT, RECEIPT, "FL-20261020-999999", 3400L));
         sync(otherOrderNo).andExpect(status().isOk()).andExpect(jsonPath("$.after").value("PAYMENT_APPROVING"));
 
         long otherAmount = order("PAYMENT_APPROVING");
         when(toss.lookup(any())).thenReturn(
-                TossLookupResult.found("ABORTED", "카드", APPROVED_AT, "FL-20261020-" + otherAmount, 9999L));
+                TossLookupResult.found("ABORTED", "카드", APPROVED_AT, RECEIPT, "FL-20261020-" + otherAmount, 9999L));
         sync(otherAmount).andExpect(status().isOk()).andExpect(jsonPath("$.after").value("PAYMENT_APPROVING"));
 
         for (long id : List.of(otherOrderNo, otherAmount)) {

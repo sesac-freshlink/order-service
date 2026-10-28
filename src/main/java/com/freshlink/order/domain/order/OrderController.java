@@ -56,7 +56,7 @@ public class OrderController {
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
         requireCustomer(userId, role);
-        return OrderResponse.from(orderService.get(userId, orderId));
+        return orderService.getDetail(userId, orderId);
     }
 
     /** OR-03 결제 승인: 토스 결제창 성공 뒤 화면이 부른다. 결과는 status로 알린다 */

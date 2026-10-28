@@ -4,10 +4,17 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.common.error.OrderErrorCode;
+import com.freshlink.order.domain.payment.Payment;
+import com.freshlink.order.domain.payment.PaymentRepository;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,17 +30,21 @@ public class OrderService {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final OrderRepository orderRepository;
+    private final PaymentRepository paymentRepository;
     private final OutboxWriter outboxWriter;
     private final TransactionTemplate transactionTemplate;
     private final String commandsQueue;
+    private final Clock clock;
 
-    public OrderService(OrderRepository orderRepository, OutboxWriter outboxWriter,
-                        TransactionTemplate transactionTemplate,
-                        @Value("${app.queue.commands}") String commandsQueue) {
+    public OrderService(OrderRepository orderRepository, PaymentRepository paymentRepository,
+                        OutboxWriter outboxWriter, TransactionTemplate transactionTemplate,
+                        @Value("${app.queue.commands}") String commandsQueue, Clock clock) {
         this.orderRepository = orderRepository;
+        this.paymentRepository = paymentRepository;
         this.outboxWriter = outboxWriter;
         this.transactionTemplate = transactionTemplate;
         this.commandsQueue = commandsQueue;
+        this.clock = clock;
     }
 
     /**
@@ -68,10 +79,30 @@ public class OrderService {
         return order;
     }
 
+    /** OR-02 응답: 주문 + 결제 내역(승인 시작 전이면 null) + 서버 현재 시각 */
+    @Transactional(readOnly = true)
+    public OrderResponse getDetail(String customerId, Long orderId) {
+        Order order = get(customerId, orderId);
+        Payment payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+        return OrderResponse.from(order, payment, OffsetDateTime.now(clock));
+    }
+
     /** OR-04 점주 신규 주문 목록: 그 점포의 PAID 주문, 결제 완료 시각 최신순 (페이지 없음) */
     @Transactional(readOnly = true)
     public List<Order> listPaidForStore(Long storeId) {
         return orderRepository.findByStoreIdAndStatusOrderByPaidAtDescIdDesc(storeId, OrderStatus.PAID);
+    }
+
+    /** OR-04 응답: 목록의 결제 내역은 쿼리 한 번으로 읽는다 */
+    @Transactional(readOnly = true)
+    public List<OwnerOrderResponse> listPaidForStoreWithPayment(Long storeId) {
+        List<Order> orders = listPaidForStore(storeId);
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Payment> payments = paymentRepository.findByOrderIdIn(orders.stream().map(Order::getId).toList())
+                .stream().collect(Collectors.toMap(Payment::getOrderId, Function.identity()));
+        return orders.stream().map(o -> OwnerOrderResponse.from(o, payments.get(o.getId()))).toList();
     }
 
     /** 주문 저장, 주문번호 채우기, RESERVE 쪽지 outbox 저장을 한 트랜잭션으로 한다 */

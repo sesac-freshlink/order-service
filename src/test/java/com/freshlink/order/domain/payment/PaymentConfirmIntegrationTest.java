@@ -56,6 +56,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -71,6 +72,7 @@ class PaymentConfirmIntegrationTest {
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
     private static final OffsetDateTime NOW = OffsetDateTime.of(2026, 10, 20, 15, 31, 55, 0, KST);
     private static final OffsetDateTime APPROVED_AT = OffsetDateTime.of(2026, 10, 20, 15, 35, 10, 0, KST);
+    private static final String RECEIPT = "https://dashboard.tosspayments.com/receipt/redirection?transactionId=tviva_1";
 
     @Autowired
     MockMvc mockMvc;
@@ -156,7 +158,7 @@ class PaymentConfirmIntegrationTest {
 
     @Test
     void 승인_성공이면_PAID와_CONFIRM_쪽지_결제_기록이_남는다() throws Exception {
-        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
 
         confirm("pk_ok")
                 .andExpect(status().isOk())
@@ -178,6 +180,7 @@ class PaymentConfirmIntegrationTest {
         assertThat(tossKey.getValue()).isNotEqualTo(order.getRequestId());
         assertThat(payment.get("toss_status")).isEqualTo("DONE");
         assertThat(payment.get("method")).isEqualTo("카드");
+        assertThat(payment.get("receipt_url")).isEqualTo(RECEIPT);
         assertThat(statusOf(order)).isEqualTo(OrderStatus.PAID);
 
         List<String> confirms = outboxPayloads("CONFIRM");
@@ -185,6 +188,40 @@ class PaymentConfirmIntegrationTest {
         ConfirmMessage msg = MessageJson.fromJson(confirms.get(0), ConfirmMessage.class);
         assertThat(msg.storeId()).isEqualTo(1L);
         assertThat(outboxPayloads("RELEASE")).isEmpty();
+    }
+
+    @Test
+    void 승인_뒤_주문_조회에_결제_내역과_서버_시각이_나온다() throws Exception {
+        String orderPath = "/orders/" + order.getId();
+        mockMvc.perform(get(orderPath).header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PAYMENT_WAITING"))
+                .andExpect(jsonPath("$.payment").isEmpty())
+                .andExpect(jsonPath("$.serverTime").value("2026-10-20T15:31:55+09:00"));
+
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
+        confirm("pk_detail").andExpect(status().isOk());
+
+        mockMvc.perform(get(orderPath).header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PAID"))
+                .andExpect(jsonPath("$.payment.method").value("카드"))
+                .andExpect(jsonPath("$.payment.approvedAt").value("2026-10-20T15:35:10+09:00"))
+                .andExpect(jsonPath("$.payment.status").value("DONE"))
+                .andExpect(jsonPath("$.payment.receiptUrl").value(RECEIPT))
+                .andExpect(jsonPath("$.serverTime").value("2026-10-20T15:31:55+09:00"));
+    }
+
+    @Test
+    void 영수증이_없는_승인도_PAID이고_영수증_주소만_null() throws Exception {
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, null));
+
+        confirm("pk_no_receipt").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+        assertThat(paymentRow(order).get("receipt_url")).isNull();
+        mockMvc.perform(get("/orders/" + order.getId()).header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"))
+                .andExpect(jsonPath("$.payment.status").value("DONE"))
+                .andExpect(jsonPath("$.payment.receiptUrl").isEmpty());
     }
 
     @Test
@@ -226,7 +263,7 @@ class PaymentConfirmIntegrationTest {
 
     @Test
     void 같은_paymentKey로_다시_오면_토스를_다시_부르지_않고_지금_상태를_준다() throws Exception {
-        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
         confirm("pk_same").andExpect(status().isOk());
 
         confirm("pk_same")
@@ -246,7 +283,7 @@ class PaymentConfirmIntegrationTest {
         when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenAnswer(inv -> {
             inToss.countDown();
             releaseToss.await(30, TimeUnit.SECONDS);
-            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT);
+            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT);
         });
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
@@ -281,7 +318,7 @@ class PaymentConfirmIntegrationTest {
                     NOW.minusSeconds(1).toLocalDateTime(), order.getId());
             expiryService.expireDue();
             statusDuringToss.set(statusOf(order));
-            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT);
+            return TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT);
         });
 
         confirm("pk_race").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
@@ -298,7 +335,7 @@ class PaymentConfirmIntegrationTest {
         // 시계가 고정이라 마감을 지난 값으로 두어 골라지게 한 뒤, 승인 직전에 마감을 되돌렸다가 승인 뒤 다시 지난 값으로 둔다
         jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
                 NOW.minusSeconds(1).toLocalDateTime(), order.getId());
-        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
         doAnswer(inv -> {
             // 저장소 프록시는 실제 메서드를 대신 부를 수 없어 같은 조건(findDueIds)을 SQL로 고른다
             List<Long> ids = jdbc.queryForList("SELECT id FROM orders WHERE status = 'PAYMENT_WAITING' "
@@ -332,7 +369,7 @@ class PaymentConfirmIntegrationTest {
 
     @Test
     void 다른_주문이_쓴_paymentKey면_409_PAYMENT_INFO_MISMATCH이고_토스를_부르지_않는다() throws Exception {
-        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT));
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
         confirm("pk_shared").andExpect(status().isOk());
         Order other = waitingOrder(customer);
 
