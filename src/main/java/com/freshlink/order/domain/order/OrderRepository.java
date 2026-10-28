@@ -1,0 +1,29 @@
+package com.freshlink.order.domain.order;
+
+import jakarta.persistence.LockModeType;
+import java.util.List;
+import java.util.Optional;
+import java.time.OffsetDateTime;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+public interface OrderRepository extends JpaRepository<Order, Long> {
+
+    /** (customer_id, request_id)는 유니크 키라 최대 1건이다 */
+    Optional<Order> findByCustomerIdAndRequestId(String customerId, String requestId);
+
+    /** 상태를 바꾸기 전에 행을 잠근다 (SELECT … FOR UPDATE). 같은 주문을 동시에 바꾸는 쪽지·스케줄러·결제가 차례로 처리된다 */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
+    /** 점포의 한 상태 주문을 결제 시각 최신순으로 (인덱스 idx_orders_store_status_paid) */
+    List<Order> findByStoreIdAndStatusOrderByPaidAtDescIdDesc(Long storeId, OrderStatus status);
+
+    /** 결제 마감이 지난 주문 ID, 마감이 이른 순 (인덱스 idx_orders_status_expires) */
+    @Query("select o.id from Order o where o.status = :status and o.paymentExpiresAt <= :now order by o.paymentExpiresAt")
+    List<Long> findDueIds(@Param("status") OrderStatus status, @Param("now") OffsetDateTime now, Pageable pageable);
+}

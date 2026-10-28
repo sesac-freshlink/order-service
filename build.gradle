@@ -1,0 +1,63 @@
+// order-service 빌드 설정. 팀 공통 기준: Java 21, Spring Boot 4.0.8, Gradle Wrapper 9.x.
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.0.8'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.freshlink'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        // common 라이브러리 (GitHub Packages). 읽기에도 read:packages 토큰이 필요하다. 각자 PC 환경 변수 GITHUB_ACTOR, GITHUB_TOKEN에 둔다
+        url = uri("https://maven.pkg.github.com/sesac-freshlink/common")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.freshlink:common:0.3.0'                               // 쪽지 DTO 7종, ErrorCode·BusinessException·ErrorResponse, Outbox 발행기·멱등 처리
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'        // REST API
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'      // MySQL 접근
+    implementation 'org.springframework.boot:spring-boot-starter-validation'    // @Valid
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'      // /actuator/health
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'      // Swagger UI: /swagger-ui.html, /v3/api-docs
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'                  // /actuator/prometheus
+    implementation 'org.springframework.boot:spring-boot-starter-zipkin'        // 추적: Micrometer Tracing(Brave) + Zipkin 전송 (할 일 16)
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'       // 테이블은 Flyway 마이그레이션으로 관리 (db/migration/V1__ 부터)
+    runtimeOnly 'org.flywaydb:flyway-mysql'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    implementation platform('io.awspring.cloud:spring-cloud-aws-dependencies:4.2.0')
+    implementation 'io.awspring.cloud:spring-cloud-aws-starter-sqs'              // SqsTemplate, @SqsListener (common Outbox 발행기가 쓴다)
+    runtimeOnly 'software.amazon.awssdk:sts'                                    // IRSA(웹 아이덴티티 토큰)로 AWS 자격을 받는 데 필요. 없으면 파드에서 SQS 호출 실패
+    implementation 'net.javacrumbs.shedlock:shedlock-spring:7.10.1'
+    implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.10.1'   // LockProvider (Outbox 발행기·만료 스케줄러)
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'    // 테스트·로컬 실행 때 MySQL 컨테이너
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-mysql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
