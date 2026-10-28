@@ -140,7 +140,7 @@ public class PaymentService {
         switch (result.outcome()) {
             case APPROVED -> {
                 OffsetDateTime paidAt = result.approvedAt() != null ? result.approvedAt() : now;
-                resultWriter.paid(order, payment, result.tossStatus(), result.method(), paidAt);
+                resultWriter.paid(order, payment, result.tossStatus(), result.method(), result.receiptUrl(), paidAt);
                 log.info("결제 완료 orderId={} amount={}", orderId, order.getAmount());
             }
             case DEFINITE_FAILURE -> {

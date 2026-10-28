@@ -29,7 +29,7 @@ public class OwnerOrderController {
             throw new BusinessException(OrderErrorCode.FORBIDDEN);
         }
         Long storeId = parseStoreId(storeIdHeader);
-        return orderService.listPaidForStore(storeId).stream().map(OwnerOrderResponse::from).toList();
+        return orderService.listPaidForStoreWithPayment(storeId);
     }
 
     /** 없거나 비었거나 양의 정수가 아니면 연결된 점포가 없는 것으로 본다 */

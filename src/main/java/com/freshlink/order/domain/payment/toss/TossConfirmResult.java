@@ -8,15 +8,18 @@ public record TossConfirmResult(
         String tossStatus,
         String method,
         OffsetDateTime approvedAt,
+        String receiptUrl,
         String errorCode,
         String errorMessage
 ) {
 
-    public static TossConfirmResult approved(String tossStatus, String method, OffsetDateTime approvedAt) {
-        return new TossConfirmResult(TossOutcome.APPROVED, tossStatus, method, approvedAt, null, null);
+    /** receiptUrl은 토스 receipt.url. 없으면 null */
+    public static TossConfirmResult approved(String tossStatus, String method, OffsetDateTime approvedAt,
+                                             String receiptUrl) {
+        return new TossConfirmResult(TossOutcome.APPROVED, tossStatus, method, approvedAt, receiptUrl, null, null);
     }
 
     public static TossConfirmResult error(TossOutcome outcome, String errorCode, String errorMessage) {
-        return new TossConfirmResult(outcome, null, null, null, errorCode, errorMessage);
+        return new TossConfirmResult(outcome, null, null, null, null, errorCode, errorMessage);
     }
 }

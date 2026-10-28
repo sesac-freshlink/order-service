@@ -68,6 +68,33 @@ class TossPaymentsClientTest {
         assertThat(r.tossStatus()).isEqualTo("DONE");
         assertThat(r.method()).isEqualTo("카드");
         assertThat(r.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-10-20T15:35:10+09:00"));
+        assertThat(r.receiptUrl()).isNull();
+    }
+
+    @Test
+    void 승인_성공_응답의_receipt_url을_영수증_주소로_읽는다() {
+        server.expect(requestTo(BASE + "/v1/payments/confirm"))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\",\"approvedAt\":\"2026-10-20T15:35:10+09:00\","
+                        + "\"receipt\":{\"url\":\"https://dashboard.tosspayments.com/receipt/redirection?transactionId=tviva_1\"}}",
+                        MediaType.APPLICATION_JSON));
+
+        TossConfirmResult r = confirm();
+
+        assertThat(r.outcome()).isEqualTo(TossOutcome.APPROVED);
+        assertThat(r.receiptUrl())
+                .isEqualTo("https://dashboard.tosspayments.com/receipt/redirection?transactionId=tviva_1");
+    }
+
+    @Test
+    void receipt가_null이어도_승인_성공이고_영수증_주소만_없다() {
+        server.expect(requestTo(BASE + "/v1/payments/confirm"))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\",\"receipt\":null}",
+                        MediaType.APPLICATION_JSON));
+
+        TossConfirmResult r = confirm();
+
+        assertThat(r.outcome()).isEqualTo(TossOutcome.APPROVED);
+        assertThat(r.receiptUrl()).isNull();
     }
 
     @Test
@@ -159,7 +186,8 @@ class TossPaymentsClientTest {
                 .andExpect(header("Authorization", basic))
                 .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\","
                         + "\"approvedAt\":\"2026-10-20T15:35:10+09:00\",\"orderId\":\"FL-20261020-000123\","
-                        + "\"totalAmount\":3400}", MediaType.APPLICATION_JSON));
+                        + "\"totalAmount\":3400,\"receipt\":{\"url\":\"https://receipt.test/1\"}}",
+                        MediaType.APPLICATION_JSON));
 
         TossLookupResult r = client.lookup("pk_1");
 
@@ -170,6 +198,7 @@ class TossPaymentsClientTest {
         assertThat(r.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-10-20T15:35:10+09:00"));
         assertThat(r.orderId()).isEqualTo("FL-20261020-000123");
         assertThat(r.totalAmount()).isEqualTo(3400L);
+        assertThat(r.receiptUrl()).isEqualTo("https://receipt.test/1");
     }
 
     @Test

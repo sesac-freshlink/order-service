@@ -86,7 +86,8 @@ public class PaymentSyncService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         String status = result.status();
         if (DONE.equals(status)) {
-            resultWriter.paid(order, payment, status, result.method(), result.approvedAt() != null ? result.approvedAt() : now);
+            resultWriter.paid(order, payment, status, result.method(), result.receiptUrl(),
+                    result.approvedAt() != null ? result.approvedAt() : now);
             log.info("결제 확인: 승인 성공으로 반영 orderId={}", orderId);
         } else if (FINAL_FAILURE.contains(status)) {
             resultWriter.failed(order, payment, null, "토스 결제 상태 " + status, now);
