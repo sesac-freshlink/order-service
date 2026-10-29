@@ -2,6 +2,7 @@ package com.freshlink.order.domain.scheduler;
 
 import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.PickupDeadlineService;
+import com.freshlink.order.domain.payment.PaymentAutoSyncService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -25,8 +26,10 @@ class OrderExpirySchedulerTest {
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-20T06:50:00Z"), ZoneId.of("Asia/Seoul"));
     private final OrderExpiryService service = mock(OrderExpiryService.class);
     private final PickupDeadlineService pickupService = mock(PickupDeadlineService.class);
+    private final PaymentAutoSyncService paymentSyncService = mock(PaymentAutoSyncService.class);
     private final LockProvider lockProvider = mock(LockProvider.class);
-    private final OrderExpiryScheduler scheduler = new OrderExpiryScheduler(service, pickupService, lockProvider, clock);
+    private final OrderExpiryScheduler scheduler =
+            new OrderExpiryScheduler(service, pickupService, paymentSyncService, lockProvider, clock);
 
     @Test
     void 잠금을_잡으면_만료를_돌리고_잠금_이름은_order_expiry() {
@@ -76,5 +79,26 @@ class OrderExpirySchedulerTest {
         when(service.expireDue()).thenThrow(new IllegalStateException("db down"));
 
         scheduler.run();
+    }
+
+    @Test
+    void 결제_자동_조회는_따로_잠금_order_payment_sync로_돌린다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+
+        scheduler.runPaymentSync();
+
+        verify(paymentSyncService).syncDue();
+        verify(service, never()).expireDue();
+        ArgumentCaptor<LockConfiguration> lock = ArgumentCaptor.forClass(LockConfiguration.class);
+        verify(lockProvider).lock(lock.capture());
+        assertThat(lock.getValue().getName()).isEqualTo("order-payment-sync");
+    }
+
+    @Test
+    void 결제_자동_조회_중_예외가_나도_스케줄러_스레드는_죽지_않는다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+        when(paymentSyncService.syncDue()).thenThrow(new IllegalStateException("toss down"));
+
+        scheduler.runPaymentSync();
     }
 }

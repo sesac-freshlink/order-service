@@ -158,7 +158,9 @@ public class PaymentService {
             }
             default -> {
                 payment.recordError(result.errorCode(), result.errorMessage());
-                log.warn("결제 결과 불명. 승인 중으로 둔다 (OP-01로 확인) orderId={} outcome={} code={} message={}",
+                // A11: 곧바로 첫 자동 조회, 이후 30초마다 (PaymentAutoSyncService)
+                payment.scheduleSync(now);
+                log.warn("결제 결과 불명. 승인 중으로 두고 자동 조회한다 orderId={} outcome={} code={} message={}",
                         orderId, result.outcome(), result.errorCode(), result.errorMessage());
             }
         }
