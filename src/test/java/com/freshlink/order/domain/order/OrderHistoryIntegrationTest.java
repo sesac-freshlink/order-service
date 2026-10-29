@@ -143,6 +143,47 @@ class OrderHistoryIntegrationTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
+    /** BASE(10/20 10:00 KST)에서 10/21 23:59, 10/22 00:00까지의 분 */
+    private static final int OCT21_2359 = 1440 + 839;
+    private static final int OCT22_0000 = 1440 + 840;
+
+    @Test
+    void 고객_기간은_KST_날짜로_양끝을_포함하고_탭과_같이_쓴다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long oct20 = order(me, store, "PAID", 0);
+        long oct21Picked = order(me, store, "PICKED_UP", 1440);
+        long oct21Late = order(me, store, "PAID", OCT21_2359);
+        long oct22First = order(me, store, "PAID", OCT22_0000);
+        long oct23 = order(me, store, "PAID", 4320);
+
+        customerList(me, "?from=2026-10-21&to=2026-10-21")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) oct21Late, (int) oct21Picked)));
+        customerList(me, "?tab=PICKUP_WAITING&from=2026-10-21&to=2026-10-22")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) oct22First, (int) oct21Late)));
+        customerList(me, "?from=2026-10-22")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) oct23, (int) oct22First)));
+        customerList(me, "?to=2026-10-20")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) oct20)))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void 기간이_거꾸로거나_날짜_형식이_틀리면_400() throws Exception {
+        String me = UUID.randomUUID().toString();
+        customerList(me, "?from=2026-10-22&to=2026-10-21")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("from: to보다 늦을 수 없습니다"));
+        customerList(me, "?to=2026/10/21")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("to: yyyy-MM-dd 형식이어야 합니다"));
+        mockMvc.perform(ownerList(storeId(), "?tab=PICKUP_WAITING&from=2026-10-30&to=2026-10-29"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
     // ---------------------------------------------------------------- A6 점주 주문 목록
 
     @Test
@@ -192,5 +233,21 @@ class OrderHistoryIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         mockMvc.perform(ownerList(store, "?tab=PICKED_UP&size=0")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 점주_기간은_주문일시_기준이고_탭과_같이_쓴다() throws Exception {
+        long store = storeId();
+        String c = UUID.randomUUID().toString();
+        order(c, store, "PAID", 0);
+        long late = order(c, store, "PAID", OCT21_2359);
+        long next = order(c, store, "PAID", OCT22_0000);
+        order(c, store, "PICKED_UP", OCT22_0000 + 1);
+
+        mockMvc.perform(ownerList(store, "?tab=PICKUP_WAITING&from=2026-10-22&to=2026-10-22"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) next)));
+        mockMvc.perform(ownerList(store, "?tab=PICKUP_WAITING&from=2026-10-21"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) next, (int) late)));
     }
 }

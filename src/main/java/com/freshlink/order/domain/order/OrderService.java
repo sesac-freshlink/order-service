@@ -131,23 +131,26 @@ public class OrderService {
         return orders.stream().map(o -> OwnerOrderResponse.from(o, payments.get(o.getId()))).toList();
     }
 
-    /** A3 고객 주문 내역: 본인 주문을 구분별로, 주문일시 최신순 */
+    /** A3 고객 주문 내역: 본인 주문을 구분별·기간별로, 주문일시 최신순 */
     @Transactional(readOnly = true)
     public PageResponse<CustomerOrderSummaryResponse> listForCustomer(String customerId, CustomerOrderTab tab,
-                                                                     OrderPageRequest paging) {
+                                                                     OrderPeriod period, OrderPageRequest paging) {
         PageRequest pageable = PageRequest.of(paging.page(), paging.size(),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-        return PageResponse.of(orderRepository.findByCustomerIdAndStatusIn(customerId, tab.statuses(), pageable),
+        return PageResponse.of(orderRepository.findByCustomerIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        customerId, tab.statuses(), period.start(), period.end(), pageable),
                 CustomerOrderSummaryResponse::from);
     }
 
-    /** A6 점주 주문 목록: 그 점포 주문을 구분별로, 결제 내역은 쿼리 한 번으로 붙인다 */
+    /** A6 점주 주문 목록: 그 점포 주문을 구분별·기간별로, 결제 내역은 쿼리 한 번으로 붙인다 */
     @Transactional(readOnly = true)
-    public PageResponse<OwnerOrderResponse> listForStore(Long storeId, OwnerOrderTab tab, OrderPageRequest paging) {
+    public PageResponse<OwnerOrderResponse> listForStore(Long storeId, OwnerOrderTab tab, OrderPeriod period,
+                                                         OrderPageRequest paging) {
         if (tab.statuses().isEmpty()) {
             return PageResponse.empty(paging.page(), paging.size());
         }
-        Page<Order> page = orderRepository.findByStoreIdAndStatusIn(storeId, tab.statuses(),
+        Page<Order> page = orderRepository.findByStoreIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                storeId, tab.statuses(), period.start(), period.end(),
                 PageRequest.of(paging.page(), paging.size(), tab.sort()));
         Map<Long, Payment> payments = page.isEmpty() ? Map.of()
                 : paymentRepository.findByOrderIdIn(page.getContent().stream().map(Order::getId).toList())

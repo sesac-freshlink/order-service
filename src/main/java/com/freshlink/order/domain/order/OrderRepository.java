@@ -25,11 +25,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** 점포의 한 상태 주문을 결제 시각 최신순으로 (인덱스 idx_orders_store_status_paid) */
     List<Order> findByStoreIdAndStatusOrderByPaidAtDescIdDesc(Long storeId, OrderStatus status);
 
-    /** A3 고객 주문 내역: 본인 주문 중 그 상태들, 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5) */
-    Page<Order> findByCustomerIdAndStatusIn(String customerId, Collection<OrderStatus> statuses, Pageable pageable);
+    /** A3 고객 주문 내역: 본인 주문 중 그 상태들, 만든 시각 start 이상 end 미만, 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5) */
+    Page<Order> findByCustomerIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            String customerId, Collection<OrderStatus> statuses, OffsetDateTime start, OffsetDateTime end, Pageable pageable);
 
-    /** A6 점주 주문 목록: 그 점포 주문 중 그 상태들, 정렬·페이지는 pageable (인덱스 idx_orders_store_status_paid 앞부분) */
-    Page<Order> findByStoreIdAndStatusIn(Long storeId, Collection<OrderStatus> statuses, Pageable pageable);
+    /** A6 점주 주문 목록: 그 점포 주문 중 그 상태들, 만든 시각 start 이상 end 미만, 정렬·페이지는 pageable (인덱스 idx_orders_store_status_paid 앞부분) */
+    Page<Order> findByStoreIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Long storeId, Collection<OrderStatus> statuses, OffsetDateTime start, OffsetDateTime end, Pageable pageable);
 
     /** 결제 마감이 지난 주문, 마감·ID 순 (인덱스 idx_orders_status_expires) */
     @Query("select new com.freshlink.order.domain.order.DueOrder(o.id, o.paymentExpiresAt) from Order o"

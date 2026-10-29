@@ -50,17 +50,22 @@ public class OrderController {
         return ResponseEntity.status(status).body(CreateOrderResponse.from(result.order()));
     }
 
-    /** A3 고객 주문 내역: tab = PICKUP_WAITING·PICKED_UP·CANCELED·ALL(기본), page(0부터)·size(10·20·50, 기본 20) */
+    /**
+     * A3 고객 주문 내역: tab = PICKUP_WAITING·PICKED_UP·CANCELED·ALL(기본), page(0부터)·size(10·20·50, 기본 20).
+     * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택. 탭과 같이 쓴다
+     */
     @GetMapping
     public PageResponse<CustomerOrderSummaryResponse> list(
             @RequestParam(required = false, defaultValue = "ALL") String tab,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
         requireCustomer(userId, role);
         return orderService.listForCustomer(userId, OrderPageRequest.tab(CustomerOrderTab.class, tab),
-                OrderPageRequest.of(page, size));
+                OrderPeriod.of(from, to), OrderPageRequest.of(page, size));
     }
 
     /** OR-02 주문 조회: 본인 주문만 */
