@@ -286,7 +286,7 @@ class OrderControllerTest {
     }
 
     @Test
-    void 점주_목록은_200과_8개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
+    void 점주_목록은_200과_10개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
         Payment payment = Payment.start(123L, "pk_1", "33333333-3333-3333-3333-333333333333", 3400L);
         payment.approve("DONE", "카드", OffsetDateTime.parse("2026-10-20T06:35:10Z"), "https://receipt.test/1");
         when(orderService.listPaidForStoreWithPayment(7L))
@@ -297,6 +297,8 @@ class OrderControllerTest {
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].orderId").value(123))
                 .andExpect(jsonPath("$[0].orderNo").value("FL-20261020-000123"))
+                .andExpect(jsonPath("$[0].status").value("PAID"))
+                .andExpect(jsonPath("$[0].pickedUpAt").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$[0].productName").value("매운 컵라면 115g"))
                 .andExpect(jsonPath("$[0].quantity").value(2))
                 .andExpect(jsonPath("$[0].amount").value(3400))

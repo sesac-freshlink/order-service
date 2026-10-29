@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 점주 API. 점포는 X-Store-Id로만 고른다 (경로·쿼리로 점포를 받지 않는다) */
@@ -22,8 +23,8 @@ public class OwnerOrderController {
         this.orderService = orderService;
     }
 
-    /** OR-04 점주 신규 주문 목록 */
-    @GetMapping
+    /** OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때 */
+    @GetMapping(params = "!tab")
     public List<OwnerOrderResponse> list(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
             @RequestHeader(name = AuthHeaders.STORE_ID, required = false) String storeIdHeader) {
@@ -32,6 +33,25 @@ public class OwnerOrderController {
         }
         Long storeId = parseStoreId(storeIdHeader);
         return orderService.listPaidForStoreWithPayment(storeId);
+    }
+
+    /**
+     * A6 점주 주문 목록 (OR-04 확장): tab = PICKUP_WAITING·PICKED_UP·CANCELED·PICKUP_EXPIRED, page(0부터)·size(10·20·50).
+     * 같은 주소에 tab을 붙이면 페이지 응답이 온다. tab이 없으면 위 MVP 응답(배열) 그대로라 예전 화면도 깨지지 않는다
+     */
+    @GetMapping(params = "tab")
+    public PageResponse<OwnerOrderResponse> listByTab(
+            @RequestParam String tab,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @RequestHeader(name = AuthHeaders.STORE_ID, required = false) String storeIdHeader) {
+        if (!AuthHeaders.hasRole(role, AuthHeaders.ROLE_OWNER)) {
+            throw new BusinessException(OrderErrorCode.FORBIDDEN);
+        }
+        Long storeId = parseStoreId(storeIdHeader);
+        return orderService.listForStore(storeId, OrderPageRequest.tab(OwnerOrderTab.class, tab),
+                OrderPageRequest.of(page, size));
     }
 
     /** A5 점주 픽업 확인 (기한 이내 결제 완료 주문만) */
