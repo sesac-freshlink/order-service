@@ -89,6 +89,10 @@ public class Order {
     @Column(name = "closed_at")
     private OffsetDateTime closedAt;
 
+    /** A12 재고 확인 결과를 오래 못 받아 경고를 남긴 시각. 한 주문에 한 번만 경고한다 (V7) */
+    @Column(name = "reserving_alerted_at")
+    private OffsetDateTime reservingAlertedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -268,7 +272,16 @@ public class Order {
     public OffsetDateTime getPaidAt() { return paidAt; }
     public OffsetDateTime getPickupDeadline() { return pickupDeadline; }
     public OffsetDateTime getPickedUpAt() { return pickedUpAt; }
+    /** A12 재고 확인 중(RESERVING) 경고를 남겼다고 표시한다. 상태는 바꾸지 않는다 */
+    public void markReservingAlerted(OffsetDateTime now) {
+        if (status != OrderStatus.RESERVING) {
+            throw new IllegalStateException("재고 확인 중이 아니다: orderId=" + id + " status=" + status);
+        }
+        this.reservingAlertedAt = now;
+    }
+
     public OffsetDateTime getClosedAt() { return closedAt; }
+    public OffsetDateTime getReservingAlertedAt() { return reservingAlertedAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

@@ -47,6 +47,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                                 @Param("afterDue") OffsetDateTime afterDue, @Param("afterId") Long afterId,
                                 Pageable pageable);
 
+    /** A12 재고 확인 결과를 기준 시각까지 못 받았고 아직 경고하지 않은 주문 ID, 오래된 순 (인덱스 idx_orders_status_created, V7) */
+    @Query("select o.id from Order o where o.status = :status and o.createdAt <= :before and o.reservingAlertedAt is null"
+            + " order by o.createdAt, o.id")
+    List<Long> findStuckReservingIds(@Param("status") OrderStatus status, @Param("before") OffsetDateTime before,
+                                     Pageable pageable);
+
     /** 픽업 기한이 지난 주문, 기한·ID 순 (인덱스 idx_orders_status_pickup, V4) */
     @Query("select new com.freshlink.order.domain.order.DueOrder(o.id, o.pickupDeadline) from Order o"
             + " where o.status in :statuses and o.pickupDeadline < :now order by o.pickupDeadline, o.id")

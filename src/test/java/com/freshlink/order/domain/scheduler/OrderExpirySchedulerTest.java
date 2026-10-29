@@ -2,6 +2,7 @@ package com.freshlink.order.domain.scheduler;
 
 import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.PickupDeadlineService;
+import com.freshlink.order.domain.order.ReservingWatchService;
 import com.freshlink.order.domain.payment.PaymentAutoSyncService;
 import java.time.Clock;
 import java.time.Instant;
@@ -27,9 +28,10 @@ class OrderExpirySchedulerTest {
     private final OrderExpiryService service = mock(OrderExpiryService.class);
     private final PickupDeadlineService pickupService = mock(PickupDeadlineService.class);
     private final PaymentAutoSyncService paymentSyncService = mock(PaymentAutoSyncService.class);
+    private final ReservingWatchService reservingWatchService = mock(ReservingWatchService.class);
     private final LockProvider lockProvider = mock(LockProvider.class);
     private final OrderExpiryScheduler scheduler =
-            new OrderExpiryScheduler(service, pickupService, paymentSyncService, lockProvider, clock);
+            new OrderExpiryScheduler(service, pickupService, paymentSyncService, reservingWatchService, lockProvider, clock);
 
     @Test
     void 잠금을_잡으면_만료를_돌리고_잠금_이름은_order_expiry() {
@@ -100,5 +102,18 @@ class OrderExpirySchedulerTest {
         when(paymentSyncService.syncDue()).thenThrow(new IllegalStateException("toss down"));
 
         scheduler.runPaymentSync();
+    }
+
+    @Test
+    void 재고_확인_지연_감지는_따로_잠금_order_reserving_watch로_돌린다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+
+        scheduler.runReservingWatch();
+
+        verify(reservingWatchService).detect();
+        verify(service, never()).expireDue();
+        ArgumentCaptor<LockConfiguration> lock = ArgumentCaptor.forClass(LockConfiguration.class);
+        verify(lockProvider).lock(lock.capture());
+        assertThat(lock.getValue().getName()).isEqualTo("order-reserving-watch");
     }
 }
