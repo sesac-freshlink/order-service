@@ -19,6 +19,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -126,6 +129,33 @@ public class OrderService {
         Map<Long, Payment> payments = paymentRepository.findByOrderIdIn(orders.stream().map(Order::getId).toList())
                 .stream().collect(Collectors.toMap(Payment::getOrderId, Function.identity()));
         return orders.stream().map(o -> OwnerOrderResponse.from(o, payments.get(o.getId()))).toList();
+    }
+
+    /** A3 고객 주문 내역: 본인 주문을 구분별·기간별로, 주문일시 최신순 */
+    @Transactional(readOnly = true)
+    public PageResponse<CustomerOrderSummaryResponse> listForCustomer(String customerId, CustomerOrderTab tab,
+                                                                     OrderPeriod period, OrderPageRequest paging) {
+        PageRequest pageable = PageRequest.of(paging.page(), paging.size(),
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        return PageResponse.of(orderRepository.findByCustomerIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        customerId, tab.statuses(), period.start(), period.end(), pageable),
+                CustomerOrderSummaryResponse::from);
+    }
+
+    /** A6 점주 주문 목록: 그 점포 주문을 구분별·기간별로, 결제 내역은 쿼리 한 번으로 붙인다 */
+    @Transactional(readOnly = true)
+    public PageResponse<OwnerOrderResponse> listForStore(Long storeId, OwnerOrderTab tab, OrderPeriod period,
+                                                         OrderPageRequest paging) {
+        if (tab.statuses().isEmpty()) {
+            return PageResponse.empty(paging.page(), paging.size());
+        }
+        Page<Order> page = orderRepository.findByStoreIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                storeId, tab.statuses(), period.start(), period.end(),
+                PageRequest.of(paging.page(), paging.size(), tab.sort()));
+        Map<Long, Payment> payments = page.isEmpty() ? Map.of()
+                : paymentRepository.findByOrderIdIn(page.getContent().stream().map(Order::getId).toList())
+                        .stream().collect(Collectors.toMap(Payment::getOrderId, Function.identity()));
+        return PageResponse.of(page, o -> OwnerOrderResponse.from(o, payments.get(o.getId())));
     }
 
     /** 주문 저장, 주문번호 채우기, RESERVE 쪽지 outbox 저장을 한 트랜잭션으로 한다 */
