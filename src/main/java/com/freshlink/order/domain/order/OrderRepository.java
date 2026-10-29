@@ -1,6 +1,7 @@
 package com.freshlink.order.domain.order;
 
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.time.OffsetDateTime;
@@ -26,4 +27,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** 결제 마감이 지난 주문 ID, 마감이 이른 순 (인덱스 idx_orders_status_expires) */
     @Query("select o.id from Order o where o.status = :status and o.paymentExpiresAt <= :now order by o.paymentExpiresAt")
     List<Long> findDueIds(@Param("status") OrderStatus status, @Param("now") OffsetDateTime now, Pageable pageable);
+
+    /** 픽업 기한이 지난 주문 ID, 기한이 이른 순 (인덱스 idx_orders_status_pickup, V4) */
+    @Query("select o.id from Order o where o.status in :statuses and o.pickupDeadline < :now order by o.pickupDeadline")
+    List<Long> findPickupDueIds(@Param("statuses") Collection<OrderStatus> statuses, @Param("now") OffsetDateTime now,
+                                Pageable pageable);
 }

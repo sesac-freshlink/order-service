@@ -93,6 +93,29 @@ public class OrderService {
         return orderRepository.findByStoreIdAndStatusOrderByPaidAtDescIdDesc(storeId, OrderStatus.PAID);
     }
 
+    /**
+     * A5 점주 픽업 확인. 행을 잠근 채 확인해 같은 주문을 두 번 누르거나 기한 스케줄러와 겹쳐도 한 번만 바뀐다.
+     * 없으면 404, 다른 점포면 403, 결제 완료가 아니면 409, 기한이 지났으면 409 (스케줄러가 아직 안 돌았어도)
+     */
+    @Transactional
+    public Order pickUp(Long storeId, Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!order.getStoreId().equals(storeId)) {
+            throw new BusinessException(OrderErrorCode.STORE_ORDER_ACCESS_DENIED);
+        }
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_PICKABLE);
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (order.isPickupDeadlinePassed(now)) {
+            throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
+        }
+        order.pickUp(now);
+        log.info("픽업 완료 orderId={} storeId={}", orderId, storeId);
+        return order;
+    }
+
     /** OR-04 응답: 목록의 결제 내역은 쿼리 한 번으로 읽는다 */
     @Transactional(readOnly = true)
     public List<OwnerOrderResponse> listPaidForStoreWithPayment(Long storeId) {

@@ -225,6 +225,17 @@ class PaymentConfirmIntegrationTest {
     }
 
     @Test
+    void 결제_시간이_남아도_픽업_기한이_지났으면_토스를_부르지_않고_409() throws Exception {
+        jdbc.update("UPDATE orders SET pickup_deadline = ? WHERE id = ?", NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+
+        confirm("pk_deadline").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PICKUP_DEADLINE_PASSED"));
+
+        verify(toss, never()).confirm(anyString(), anyString(), anyLong(), anyString());
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAYMENT_WAITING);
+    }
+
+    @Test
     void 확정_실패면_PAYMENT_FAILED와_RELEASE_쪽지() throws Exception {
         tossReturns(TossConfirmResult.error(TossOutcome.DEFINITE_FAILURE, "REJECT_CARD_PAYMENT", "한도 초과"));
 

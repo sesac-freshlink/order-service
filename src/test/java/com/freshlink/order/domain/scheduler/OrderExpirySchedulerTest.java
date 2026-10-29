@@ -1,6 +1,7 @@
 package com.freshlink.order.domain.scheduler;
 
 import com.freshlink.order.domain.order.OrderExpiryService;
+import com.freshlink.order.domain.order.PickupDeadlineService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -23,8 +24,9 @@ class OrderExpirySchedulerTest {
 
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-20T06:50:00Z"), ZoneId.of("Asia/Seoul"));
     private final OrderExpiryService service = mock(OrderExpiryService.class);
+    private final PickupDeadlineService pickupService = mock(PickupDeadlineService.class);
     private final LockProvider lockProvider = mock(LockProvider.class);
-    private final OrderExpiryScheduler scheduler = new OrderExpiryScheduler(service, lockProvider, clock);
+    private final OrderExpiryScheduler scheduler = new OrderExpiryScheduler(service, pickupService, lockProvider, clock);
 
     @Test
     void 잠금을_잡으면_만료를_돌리고_잠금_이름은_order_expiry() {
@@ -45,6 +47,27 @@ class OrderExpirySchedulerTest {
         scheduler.run();
 
         verify(service, never()).expireDue();
+    }
+
+    @Test
+    void 픽업_기한은_따로_잠금_order_pickup_deadline으로_돌린다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+
+        scheduler.runPickupDeadline();
+
+        verify(pickupService).expireDue();
+        verify(service, never()).expireDue();
+        ArgumentCaptor<LockConfiguration> lock = ArgumentCaptor.forClass(LockConfiguration.class);
+        verify(lockProvider).lock(lock.capture());
+        assertThat(lock.getValue().getName()).isEqualTo("order-pickup-deadline");
+    }
+
+    @Test
+    void 픽업_기한_처리_중_예외가_나도_스케줄러_스레드는_죽지_않는다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+        when(pickupService.expireDue()).thenThrow(new IllegalStateException("db down"));
+
+        scheduler.runPickupDeadline();
     }
 
     @Test

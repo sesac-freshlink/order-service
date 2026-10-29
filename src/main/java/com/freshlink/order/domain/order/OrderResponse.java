@@ -24,6 +24,8 @@ public record OrderResponse(
         OffsetDateTime paymentExpiresAt,
         OffsetDateTime paidAt,
         OffsetDateTime createdAt,
+        OffsetDateTime pickupDeadline,
+        OffsetDateTime pickedUpAt,
         OrderPaymentResponse payment,
         OffsetDateTime serverTime
 ) {
@@ -36,6 +38,7 @@ public record OrderResponse(
                 order.getStoreId(), order.getStoreName(), order.getProductId(), order.getProductName(),
                 order.getQuantity(), order.getUnitPrice(), order.getAmount(),
                 kst(order.getPaymentExpiresAt()), kst(order.getPaidAt()), kst(order.getCreatedAt()),
+                kst(order.getPickupDeadline()), kst(order.getPickedUpAt()),
                 OrderPaymentResponse.from(payment), kst(now));
     }
 

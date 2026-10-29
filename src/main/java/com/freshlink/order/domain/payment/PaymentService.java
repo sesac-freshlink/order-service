@@ -102,6 +102,10 @@ public class PaymentService {
         if (!now.isBefore(order.getPaymentExpiresAt())) {
             throw new BusinessException(OrderErrorCode.ORDER_EXPIRED);
         }
+        // A4: 결제 시간이 남아도 픽업 기한이 지났으면 결제를 막는다 (스케줄러가 늦게 돌아도)
+        if (order.isPickupDeadlinePassed(now)) {
+            throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
+        }
         if (!toss.isConfigured()) {
             // 부르기 전에 알 수 있는 설정 오류다. 주문을 승인 중에 묶어 두지 않고 그대로 둔다
             throw new IllegalStateException("TOSS_SECRET_KEY가 설정되지 않아 결제 승인을 시작하지 않는다: orderId=" + orderId);

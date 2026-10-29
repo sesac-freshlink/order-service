@@ -117,6 +117,8 @@ class ReservationResultIntegrationTest {
         assertThat(saved.getAmount()).isEqualTo(5100L);
         assertThat(saved.getPaymentWaitingAt()).isEqualTo(NOW);
         assertThat(saved.getPaymentExpiresAt()).isEqualTo(NOW.plusMinutes(10));
+        // A4: 픽업 기한은 받은 lot 유통기한 중 가장 빠른 값 (10/25 23:59:59, 10/26 23:59:59 중 10/25)
+        assertThat(saved.getPickupDeadline().toInstant()).isEqualTo(EXPIRY.toInstant());
 
         List<Map<String, Object>> lots = jdbc.queryForList(
                 "SELECT lot_id, quantity, DATE_FORMAT(expiry_at, '%Y-%m-%d %H:%i:%s') AS expiry "
