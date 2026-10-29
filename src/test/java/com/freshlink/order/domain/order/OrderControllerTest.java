@@ -191,7 +191,7 @@ class OrderControllerTest {
     }
 
     @Test
-    void 주문_조회는_200과_16개_필드를_돌려주고_시각은_KST다() throws Exception {
+    void 주문_조회는_200과_18개_필드를_돌려주고_시각은_KST다() throws Exception {
         Order o = order(123L);
         // DB에서 UTC로 읽혀도 응답은 +09:00이어야 한다
         ReflectionTestUtils.setField(o, "createdAt", OffsetDateTime.parse("2026-10-20T06:31:55Z"));
@@ -286,7 +286,7 @@ class OrderControllerTest {
     }
 
     @Test
-    void 점주_목록은_200과_7개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
+    void 점주_목록은_200과_8개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
         Payment payment = Payment.start(123L, "pk_1", "33333333-3333-3333-3333-333333333333", 3400L);
         payment.approve("DONE", "카드", OffsetDateTime.parse("2026-10-20T06:35:10Z"), "https://receipt.test/1");
         when(orderService.listPaidForStoreWithPayment(7L))

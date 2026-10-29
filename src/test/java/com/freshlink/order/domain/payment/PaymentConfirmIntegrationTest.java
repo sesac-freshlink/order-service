@@ -8,6 +8,7 @@ import com.freshlink.common.message.command.ReleaseReason;
 import com.freshlink.common.message.result.ReservedLot;
 import com.freshlink.common.message.result.ReservedMessage;
 import com.freshlink.order.TestcontainersConfiguration;
+import com.freshlink.order.domain.order.DueOrder;
 import com.freshlink.order.domain.order.Order;
 import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.OrderRepository;
@@ -225,6 +226,17 @@ class PaymentConfirmIntegrationTest {
     }
 
     @Test
+    void 결제_시간이_남아도_픽업_기한이_지났으면_토스를_부르지_않고_409() throws Exception {
+        jdbc.update("UPDATE orders SET pickup_deadline = ? WHERE id = ?", NOW.minusSeconds(1).toLocalDateTime(), order.getId());
+
+        confirm("pk_deadline").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PICKUP_DEADLINE_PASSED"));
+
+        verify(toss, never()).confirm(anyString(), anyString(), anyLong(), anyString());
+        assertThat(statusOf(order)).isEqualTo(OrderStatus.PAYMENT_WAITING);
+    }
+
+    @Test
     void 확정_실패면_PAYMENT_FAILED와_RELEASE_쪽지() throws Exception {
         tossReturns(TossConfirmResult.error(TossOutcome.DEFINITE_FAILURE, "REJECT_CARD_PAYMENT", "한도 초과"));
 
@@ -337,9 +349,9 @@ class PaymentConfirmIntegrationTest {
                 NOW.minusSeconds(1).toLocalDateTime(), order.getId());
         tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
         doAnswer(inv -> {
-            // 저장소 프록시는 실제 메서드를 대신 부를 수 없어 같은 조건(findDueIds)을 SQL로 고른다
+            // 저장소 프록시는 실제 메서드를 대신 부를 수 없어 같은 조건(findDue)을 SQL로 고른다
             List<Long> ids = jdbc.queryForList("SELECT id FROM orders WHERE status = 'PAYMENT_WAITING' "
-                    + "AND payment_expires_at <= ? ORDER BY payment_expires_at", Long.class, NOW.toLocalDateTime());
+                    + "AND payment_expires_at <= ? ORDER BY payment_expires_at, id", Long.class, NOW.toLocalDateTime());
             assertThat(ids).contains(order.getId());
             jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
                     NOW.plusMinutes(10).toLocalDateTime(), order.getId());
@@ -347,8 +359,8 @@ class PaymentConfirmIntegrationTest {
             // 승인이 끝나면 다시 마감 지남으로 둔다. 만료가 상태(PAYMENT_WAITING) 확인만으로 건너뛰는지 본다
             jdbc.update("UPDATE orders SET payment_expires_at = ? WHERE id = ?",
                     NOW.minusSeconds(1).toLocalDateTime(), order.getId());
-            return ids;
-        }).when(orderRepository).findDueIds(any(), any(), any());
+            return ids.stream().map(id -> new DueOrder(id, NOW.minusSeconds(1))).toList();
+        }).when(orderRepository).findDue(any(), any(), any());
 
         expiryService.expireDue();
 

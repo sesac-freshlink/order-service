@@ -80,6 +80,12 @@ public class Order {
     @Column(name = "paid_at")
     private OffsetDateTime paidAt;
 
+    @Column(name = "pickup_deadline")
+    private OffsetDateTime pickupDeadline;
+
+    @Column(name = "picked_up_at")
+    private OffsetDateTime pickedUpAt;
+
     @Column(name = "closed_at")
     private OffsetDateTime closedAt;
 
@@ -182,6 +188,47 @@ public class Order {
         this.closedAt = now;
     }
 
+    /** A4 픽업 기한: RESERVED로 받은 lot 유통기한 중 가장 빠른 값 (결제 대기로 바뀐 직후 한 번) */
+    public void assignPickupDeadline(OffsetDateTime deadline) {
+        if (status != OrderStatus.PAYMENT_WAITING) {
+            throw new IllegalStateException("픽업 기한은 결제 대기에서 정한다: orderId=" + id + " status=" + status);
+        }
+        this.pickupDeadline = deadline;
+    }
+
+    /** 픽업 기한이 지났는지. 기한 시각까지는 픽업·결제할 수 있다 */
+    public boolean isPickupDeadlinePassed(OffsetDateTime now) {
+        return pickupDeadline != null && now.isAfter(pickupDeadline);
+    }
+
+    /** A5 점주 픽업 확인: 결제 완료이고 기한 이내일 때만. 되돌리기는 없다 */
+    public void pickUp(OffsetDateTime now) {
+        if (status != OrderStatus.PAID || isPickupDeadlinePassed(now)) {
+            throw new IllegalStateException("픽업할 수 없다: orderId=" + id + " status=" + status);
+        }
+        this.status = OrderStatus.PICKED_UP;
+        this.pickedUpAt = now;
+    }
+
+    /**
+     * A4 픽업 기한 경과 (스케줄러). 결제 완료면 PICKUP_EXPIRED(환불·재고 복원 없음),
+     * 결제 대기면 EXPIRED·사유 PICKUP_DEADLINE (재고는 부르는 쪽이 RELEASE로 돌려준다)
+     */
+    public void expirePickup(OffsetDateTime now) {
+        if (!isPickupDeadlinePassed(now)) {
+            throw new IllegalStateException("픽업 기한 전이다: orderId=" + id);
+        }
+        if (status == OrderStatus.PAID) {
+            this.status = OrderStatus.PICKUP_EXPIRED;
+        } else if (status == OrderStatus.PAYMENT_WAITING) {
+            this.status = OrderStatus.EXPIRED;
+            this.failureReason = OrderFailureReason.PICKUP_DEADLINE;
+        } else {
+            throw new IllegalStateException("픽업 기한으로 닫을 수 없다: orderId=" + id + " status=" + status);
+        }
+        this.closedAt = now;
+    }
+
     /** OP-02 재고 확보 결과가 오지 않아 RESERVING에 멈춘 주문을 닫는다. 재고는 RELEASE(EXPIRED)로 돌려준다 */
     public void closeStuck(OffsetDateTime now) {
         requireReserving();
@@ -219,6 +266,8 @@ public class Order {
     public OffsetDateTime getPaymentWaitingAt() { return paymentWaitingAt; }
     public OffsetDateTime getPaymentExpiresAt() { return paymentExpiresAt; }
     public OffsetDateTime getPaidAt() { return paidAt; }
+    public OffsetDateTime getPickupDeadline() { return pickupDeadline; }
+    public OffsetDateTime getPickedUpAt() { return pickedUpAt; }
     public OffsetDateTime getClosedAt() { return closedAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }

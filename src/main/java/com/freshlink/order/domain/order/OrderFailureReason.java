@@ -6,5 +6,7 @@ public enum OrderFailureReason {
     PRODUCT_NOT_FOUND,
     INVALID_QUANTITY,
     PAYMENT_FAILED,
-    EXPIRED
+    EXPIRED,
+    /** 결제 대기 중 픽업 기한이 지나 EXPIRED로 끝남 (A4, V4) */
+    PICKUP_DEADLINE
 }

@@ -14,6 +14,7 @@ public enum OrderErrorCode implements ErrorCode {
     PAYMENT_AMOUNT_MISMATCH(400, "결제 금액이 일치하지 않습니다"),
     FORBIDDEN(403, "권한이 없습니다"),
     ORDER_ACCESS_DENIED(403, "본인 주문만 볼 수 있습니다"),
+    STORE_ORDER_ACCESS_DENIED(403, "우리 점포 주문만 처리할 수 있습니다"),
     STORE_NOT_LINKED(403, "연결된 점포가 없습니다"),
     ORDER_NOT_FOUND(404, "주문이 없습니다"),
     IDEMPOTENCY_KEY_REUSED(409, "같은 요청 번호로 다른 주문을 만들 수 없습니다"),
@@ -21,7 +22,9 @@ public enum OrderErrorCode implements ErrorCode {
     ORDER_EXPIRED(409, "결제 시간이 지났습니다"),
     PAYMENT_INFO_MISMATCH(409, "이미 다른 결제로 처리 중입니다"),
     ORDER_NOT_SYNCABLE(409, "결제 확인 대상이 아닙니다"),
-    ORDER_NOT_CLOSABLE(409, "종료할 수 없는 주문입니다");
+    ORDER_NOT_CLOSABLE(409, "종료할 수 없는 주문입니다"),
+    ORDER_NOT_PICKABLE(409, "픽업할 수 없는 주문입니다"),
+    PICKUP_DEADLINE_PASSED(409, "픽업 기한이 지난 주문입니다");
 
     private final int status;
     private final String message;

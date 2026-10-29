@@ -76,6 +76,7 @@ public class ReservationResultHandler {
         }
         validate(order, m);
         order.reserve(m.productName(), m.unitPrice(), OffsetDateTime.now(clock));
+        order.assignPickupDeadline(m.lots().stream().map(ReservedLot::expiryDate).min(OffsetDateTime::compareTo).orElseThrow());
         orderLotRepository.saveAll(m.lots().stream()
                 .map(lot -> OrderLot.of(order.getId(), lot.lotId(), lot.quantity(), lot.expiryDate()))
                 .toList());
