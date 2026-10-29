@@ -4,6 +4,7 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.MessageJson;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReleaseReason;
+import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.TestcontainersConfiguration;
 import com.freshlink.order.common.error.OrderErrorCode;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
@@ -27,10 +28,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -63,6 +68,8 @@ class PickupIntegrationTest {
 
     @MockitoBean
     SqsTemplate sqsTemplate;
+    @MockitoSpyBean
+    OutboxWriter outboxWriter;
     @TestBean
     Clock clock;
 
@@ -234,6 +241,26 @@ class PickupIntegrationTest {
         assertThat(saved.getStatus()).isEqualTo(OrderStatus.EXPIRED);
         assertThat(saved.getFailureReason()).isEqualTo(OrderFailureReason.PICKUP_DEADLINE);
         assertThat(releasesOf(due)).extracting(ReleaseMessage::reason).containsExactly(ReleaseReason.EXPIRED);
+    }
+
+    @Test
+    void 맨_앞_묶음이_계속_실패해도_다음_묶음을_이어서_보고_뒤_주문을_닫는다() {
+        // 다른 테스트가 남긴 주문보다 앞에 오게 아주 이른 기한을 쓴다. 앞 2건(결제 대기)은 RELEASE 저장이 계속 실패한다
+        long store = storeId();
+        OffsetDateTime early = OffsetDateTime.of(2020, 1, 1, 23, 59, 59, 0, KST);
+        long failing1 = order(store, "PAYMENT_WAITING", early);
+        long failing2 = order(store, "PAYMENT_WAITING", early.plusSeconds(1));
+        long next = order(store, "PAID", early.plusSeconds(2));
+        doThrow(new IllegalStateException("outbox 저장 실패 흉내")).when(outboxWriter).save(anyString(),
+                argThat(m -> m instanceof ReleaseMessage r && List.of(failing1, failing2).contains(r.orderId())));
+
+        int closed = pickupDeadlineService.expireDue(2);
+
+        assertThat(closed).isGreaterThanOrEqualTo(1);
+        assertThat(reload(next).getStatus()).isEqualTo(OrderStatus.PICKUP_EXPIRED);
+        assertThat(reload(failing1).getStatus()).isEqualTo(OrderStatus.PAYMENT_WAITING);
+        assertThat(reload(failing2).getStatus()).isEqualTo(OrderStatus.PAYMENT_WAITING);
+        assertThat(releasesOf(failing1)).isEmpty();
     }
 
     @Test

@@ -23,6 +23,8 @@ public class OrderExpiryService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderExpiryService.class);
     static final int BATCH_SIZE = 100;
+    /** 한 차례에 꺼내 보는 묶음 수 상한 (실패가 많아도 한 차례가 끝없이 길어지지 않게) */
+    static final int MAX_PAGES = 10;
 
     private final OrderRepository orderRepository;
     private final OutboxWriter outboxWriter;
@@ -44,20 +46,35 @@ public class OrderExpiryService {
         return expireDue(BATCH_SIZE);
     }
 
-    /** 한 번에 limit건까지. 남은 건은 다음 차례(1분 뒤)에 한다. 만료한 건수를 돌려준다 */
+    /**
+     * 한 차례에 limit건까지 만료한다. 실패한 건이 있어 limit건을 못 채웠고 꺼낸 묶음이 꽉 찼으면(뒤에 더 있으면)
+     * 방금 본 마지막 줄 다음부터 이어서 꺼낸다. 맨 앞 묶음이 계속 실패해도 뒤 주문이 막히지 않게 하려는 것이다.
+     * 꺼내 보는 묶음은 MAX_PAGES 번까지. 실패한 건은 이번 차례에만 건너뛰고 다음 차례(1분 뒤)에 다시 본다
+     */
     public int expireDue(int limit) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        List<Long> ids = orderRepository.findDueIds(OrderStatus.PAYMENT_WAITING, now, PageRequest.of(0, limit));
+        PageRequest page = PageRequest.of(0, limit);
+        List<DueOrder> batch = orderRepository.findDue(OrderStatus.PAYMENT_WAITING, now, page);
         int expired = 0;
-        for (Long id : ids) {
-            try {
-                if (Boolean.TRUE.equals(transactionTemplate.execute(s -> expireOne(id, now)))) {
-                    expired++;
+        for (int pages = 1; ; pages++) {
+            for (DueOrder due : batch) {
+                if (expired == limit) {
+                    break;
                 }
-            } catch (RuntimeException e) {
-                // 한 건이 실패해도 나머지는 계속한다. 실패한 건은 다음 차례에 다시 본다
-                log.error("주문 만료 실패 orderId={}", id, e);
+                try {
+                    if (Boolean.TRUE.equals(transactionTemplate.execute(s -> expireOne(due.id(), now)))) {
+                        expired++;
+                    }
+                } catch (RuntimeException e) {
+                    // 한 건이 실패해도 나머지는 계속한다. 실패한 건은 다음 차례에 다시 본다
+                    log.error("주문 만료 실패 orderId={}", due.id(), e);
+                }
             }
+            if (expired == limit || batch.size() < limit || pages == MAX_PAGES) {
+                break;
+            }
+            DueOrder last = batch.get(batch.size() - 1);
+            batch = orderRepository.findDueAfter(OrderStatus.PAYMENT_WAITING, now, last.due(), last.id(), page);
         }
         if (expired > 0) {
             log.info("결제 시간 만료 {}건", expired);

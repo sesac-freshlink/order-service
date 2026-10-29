@@ -24,6 +24,8 @@ public class PickupDeadlineService {
 
     private static final Logger log = LoggerFactory.getLogger(PickupDeadlineService.class);
     static final int BATCH_SIZE = 100;
+    /** 한 차례에 꺼내 보는 묶음 수 상한 (실패가 많아도 한 차례가 끝없이 길어지지 않게) */
+    static final int MAX_PAGES = 10;
     private static final Set<OrderStatus> TARGETS = Set.of(OrderStatus.PAID, OrderStatus.PAYMENT_WAITING);
 
     private final OrderRepository orderRepository;
@@ -46,20 +48,35 @@ public class PickupDeadlineService {
         return expireDue(BATCH_SIZE);
     }
 
-    /** 한 번에 limit건까지. 남은 건은 다음 차례에 한다. 닫은 건수를 돌려준다 */
+    /**
+     * 한 차례에 limit건까지 닫는다. 실패한 건이 있어 limit건을 못 채웠고 꺼낸 묶음이 꽉 찼으면(뒤에 더 있으면)
+     * 방금 본 마지막 줄 다음부터 이어서 꺼낸다. 맨 앞 묶음이 계속 실패해도 뒤 주문이 막히지 않게 하려는 것이다.
+     * 꺼내 보는 묶음은 MAX_PAGES 번까지. 실패한 건은 이번 차례에만 건너뛰고 다음 차례(1분 뒤)에 다시 본다
+     */
     public int expireDue(int limit) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        List<Long> ids = orderRepository.findPickupDueIds(TARGETS, now, PageRequest.of(0, limit));
+        PageRequest page = PageRequest.of(0, limit);
+        List<DueOrder> batch = orderRepository.findPickupDue(TARGETS, now, page);
         int closed = 0;
-        for (Long id : ids) {
-            try {
-                if (Boolean.TRUE.equals(transactionTemplate.execute(s -> expireOne(id, now)))) {
-                    closed++;
+        for (int pages = 1; ; pages++) {
+            for (DueOrder due : batch) {
+                if (closed == limit) {
+                    break;
                 }
-            } catch (RuntimeException e) {
-                // 한 건이 실패해도 나머지는 계속한다. 실패한 건은 다음 차례에 다시 본다
-                log.error("픽업 기한 처리 실패 orderId={}", id, e);
+                try {
+                    if (Boolean.TRUE.equals(transactionTemplate.execute(s -> expireOne(due.id(), now)))) {
+                        closed++;
+                    }
+                } catch (RuntimeException e) {
+                    // 한 건이 실패해도 나머지는 계속한다. 실패한 건은 다음 차례에 다시 본다
+                    log.error("픽업 기한 처리 실패 orderId={}", due.id(), e);
+                }
             }
+            if (closed == limit || batch.size() < limit || pages == MAX_PAGES) {
+                break;
+            }
+            DueOrder last = batch.get(batch.size() - 1);
+            batch = orderRepository.findPickupDueAfter(TARGETS, now, last.due(), last.id(), page);
         }
         if (closed > 0) {
             log.info("픽업 기한 경과 {}건", closed);
