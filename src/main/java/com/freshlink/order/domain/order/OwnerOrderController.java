@@ -18,9 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class OwnerOrderController {
 
     private final OrderService orderService;
+    private final SalesService salesService;
 
-    public OwnerOrderController(OrderService orderService) {
+    public OwnerOrderController(OrderService orderService, SalesService salesService) {
         this.orderService = orderService;
+        this.salesService = salesService;
     }
 
     /** OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때 */
@@ -67,6 +69,23 @@ public class OwnerOrderController {
             throw new BusinessException(OrderErrorCode.FORBIDDEN);
         }
         return PickupResponse.from(orderService.pickUp(parseStoreId(storeIdHeader), orderId));
+    }
+
+    /**
+     * 점주 매출 대시보드: 내 점포의 기간별 결제·환불 금액, 순매출, 결제·환불·취소 건수.
+     * from·to는 KST 날짜 yyyy-MM-dd(필수, 둘 다 포함, 최대 366일), unit = day(기본)·week(월요일 시작)·month
+     */
+    @GetMapping("/sales")
+    public SalesResponse sales(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String unit,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @RequestHeader(name = AuthHeaders.STORE_ID, required = false) String storeIdHeader) {
+        if (!AuthHeaders.hasRole(role, AuthHeaders.ROLE_OWNER)) {
+            throw new BusinessException(OrderErrorCode.FORBIDDEN);
+        }
+        return salesService.sales(parseStoreId(storeIdHeader), SalesPeriod.of(from, to), SalesUnit.of(unit));
     }
 
     /** 없거나 비었거나 양의 정수가 아니면 연결된 점포가 없는 것으로 본다 */
