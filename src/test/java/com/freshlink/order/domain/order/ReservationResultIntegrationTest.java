@@ -3,6 +3,8 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.message.BaseMessage;
 import com.freshlink.common.message.MessageJson;
 import com.freshlink.common.message.command.ConfirmMessage;
+import com.freshlink.common.message.command.ReleaseMessage;
+import com.freshlink.common.message.command.ReleaseReason;
 import com.freshlink.common.message.result.ReserveFailReason;
 import com.freshlink.common.message.result.ReserveFailedMessage;
 import com.freshlink.common.message.result.ReservedLot;
@@ -84,6 +86,19 @@ class ReservationResultIntegrationTest {
         return jdbc.queryForObject("SELECT COUNT(*) FROM order_lot WHERE order_id = ?", Integer.class, order.getId());
     }
 
+    /** 이 주문 앞으로 outbox에 쌓인 RELEASE 쪽지 */
+    private List<ReleaseMessage> releasesOf(Order order) {
+        return jdbc.queryForList("SELECT payload FROM outbox WHERE message_type = 'RELEASE'", String.class).stream()
+                .map(p -> MessageJson.fromJson(p, ReleaseMessage.class))
+                .filter(m -> m.orderId().equals(order.getId()))
+                .toList();
+    }
+
+    /** 주문을 끝난 상태로 바꾼다 (만료·결제 실패는 이 테스트에서 따로 거치지 않는다) */
+    private void closeAs(Order order, OrderStatus status) {
+        jdbc.update("UPDATE orders SET status = ?, closed_at = NOW(6) WHERE id = ?", status.name(), order.getId());
+    }
+
     private boolean processed(BaseMessage message) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM processed_message WHERE message_id = ?", Integer.class,
                 message.messageId()) == 1;
@@ -154,6 +169,82 @@ class ReservationResultIntegrationTest {
         assertThat(lotCount(order)).isEqualTo(2);
         assertThat(processed(lateReserved)).isTrue();
         assertThat(processed(lateFailed)).isTrue();
+        // 결제 대기 주문의 예약은 살아 있으므로 RELEASE하지 않는다
+        assertThat(releasesOf(order)).isEmpty();
+    }
+
+    @Test
+    void 수동_종료된_주문에_RESERVED가_늦게_오면_RELEASE_EXPIRED를_보내고_주문은_그대로() {
+        Order order = newOrder();
+        closeAs(order, OrderStatus.EXPIRED);
+
+        handler.handle(reserved(order, twoLots()));
+
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+        assertThat(saved.getProductName()).isNull();
+        assertThat(lotCount(order)).isZero();
+        List<ReleaseMessage> releases = releasesOf(order);
+        assertThat(releases).hasSize(1);
+        assertThat(releases.get(0).reason()).isEqualTo(ReleaseReason.EXPIRED);
+        assertThat(releases.get(0).storeId()).isEqualTo(1L);
+    }
+
+    @Test
+    void 재고_부족으로_끝난_주문에_RESERVED가_늦게_오면_RELEASE_EXPIRED() {
+        Order order = newOrder();
+        handler.handle(ReserveFailedMessage.of(order.getId(), 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0));
+
+        handler.handle(reserved(order, twoLots()));
+
+        assertThat(reload(order).getStatus()).isEqualTo(OrderStatus.OUT_OF_STOCK);
+        assertThat(releasesOf(order)).extracting(ReleaseMessage::reason).containsExactly(ReleaseReason.EXPIRED);
+    }
+
+    @Test
+    void 결제_실패로_끝난_주문에_RESERVED가_늦게_오면_RELEASE_PAYMENT_FAILED() {
+        Order order = newOrder();
+        closeAs(order, OrderStatus.PAYMENT_FAILED);
+
+        handler.handle(reserved(order, twoLots()));
+
+        assertThat(releasesOf(order)).extracting(ReleaseMessage::reason)
+                .containsExactly(ReleaseReason.PAYMENT_FAILED);
+    }
+
+    @Test
+    void 결제_완료_주문에_다른_RESERVED가_와도_RELEASE하지_않는다() {
+        Order order = newOrder();
+        handler.handle(reserved(order, twoLots()));
+        jdbc.update("UPDATE orders SET status = 'PAID', paid_at = NOW(6) WHERE id = ?", order.getId());
+
+        handler.handle(reserved(order, List.of(new ReservedLot(103L, 3, EXPIRY))));
+
+        assertThat(reload(order).getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(releasesOf(order)).isEmpty();
+    }
+
+    @Test
+    void 끝난_주문에_같은_RESERVED가_두_번_와도_RELEASE는_한_번() {
+        Order order = newOrder();
+        closeAs(order, OrderStatus.EXPIRED);
+        ReservedMessage late = reserved(order, twoLots());
+
+        handler.handle(late);
+        handler.handle(late);
+
+        assertThat(releasesOf(order)).hasSize(1);
+    }
+
+    @Test
+    void 끝난_주문에_RESERVE_FAILED가_늦게_오면_아무것도_보내지_않는다() {
+        Order order = newOrder();
+        closeAs(order, OrderStatus.EXPIRED);
+
+        handler.handle(ReserveFailedMessage.of(order.getId(), 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0));
+
+        assertThat(reload(order).getStatus()).isEqualTo(OrderStatus.EXPIRED);
+        assertThat(releasesOf(order)).isEmpty();
     }
 
     @Test
