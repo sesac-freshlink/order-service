@@ -16,6 +16,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,7 +26,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest({OrderController.class, OwnerOrderController.class})
@@ -46,6 +49,8 @@ class OrderControllerTest {
     PaymentService paymentService;
     @MockitoBean
     SalesService salesService;
+    @MockitoBean
+    SalesStream salesStream;
 
     private MockHttpServletRequestBuilder valid(String body) {
         return post("/orders").contentType(MediaType.APPLICATION_JSON).content(body)
@@ -341,5 +346,30 @@ class OrderControllerTest {
         mockMvc.perform(ownerOrders("CUSTOMER, OWNER", "7")).andExpect(status().isOk());
         mockMvc.perform(getOrder("123", USER, "OWNER,CUSTOMER")).andExpect(status().isOk());
         mockMvc.perform(getOrder("123", USER, "OWNERX,ADMIN")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 매출_SSE는_점주의_X_Store_Id로_연결한다() throws Exception {
+        when(salesStream.subscribe(7L)).thenReturn(new SseEmitter());
+
+        mockMvc.perform(get("/owner/orders/sales/stream").accept(MediaType.TEXT_EVENT_STREAM)
+                        .header("X-User-Id", USER).header("X-User-Role", "OWNER").header("X-Store-Id", "7"))
+                .andExpect(request().asyncStarted());
+
+        verify(salesStream).subscribe(7L);
+    }
+
+    @Test
+    void 매출_SSE는_점주가_아니거나_점포가_없으면_본문_없이_403() throws Exception {
+        mockMvc.perform(get("/owner/orders/sales/stream").accept(MediaType.TEXT_EVENT_STREAM)
+                        .header("X-User-Id", USER).header("X-User-Role", "CUSTOMER").header("X-Store-Id", "7"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(""));
+        mockMvc.perform(get("/owner/orders/sales/stream").accept(MediaType.TEXT_EVENT_STREAM)
+                        .header("X-User-Id", USER).header("X-User-Role", "OWNER").header("X-Store-Id", "abc"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(""));
+
+        verifyNoInteractions(salesStream);
     }
 }

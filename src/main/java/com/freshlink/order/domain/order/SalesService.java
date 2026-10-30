@@ -41,6 +41,20 @@ public class SalesService {
                 unit.name().toLowerCase(Locale.ROOT), periods);
     }
 
+    /** 매출 SSE용: 그 점포의 date(KST) 하루 결제 금액·건수 */
+    @Transactional(readOnly = true)
+    public TodaySales today(Long storeId, LocalDate date) {
+        SalesPeriod day = SalesPeriod.of(date.toString(), date.toString());
+        long amount = 0;
+        long count = 0;
+        for (ApprovedPayment p : paymentRepository.findApprovedForStore(
+                storeId, PaymentStatus.DONE, day.start(), day.end())) {
+            amount += p.amount();
+            count++;
+        }
+        return new TodaySales(date.toString(), amount, count);
+    }
+
     private static LocalDate kstDate(OffsetDateTime at) {
         return at.atZoneSameInstant(SalesPeriod.KST).toLocalDate();
     }

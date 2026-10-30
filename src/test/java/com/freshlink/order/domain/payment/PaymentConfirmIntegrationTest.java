@@ -14,6 +14,8 @@ import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
 import com.freshlink.order.domain.order.ReservationResultHandler;
+import com.freshlink.order.domain.order.SalesChangedEvent;
+import com.freshlink.order.domain.order.SalesStream;
 import com.freshlink.order.domain.payment.toss.TossConfirmResult;
 import com.freshlink.order.domain.payment.toss.TossOutcome;
 import com.freshlink.order.domain.payment.toss.TossPaymentsClient;
@@ -91,6 +93,8 @@ class PaymentConfirmIntegrationTest {
     SqsTemplate sqsTemplate;
     @MockitoBean
     TossPaymentsClient toss;
+    @MockitoSpyBean
+    SalesStream salesStream;
     @TestBean
     Clock clock;
 
@@ -189,6 +193,8 @@ class PaymentConfirmIntegrationTest {
         ConfirmMessage msg = MessageJson.fromJson(confirms.get(0), ConfirmMessage.class);
         assertThat(msg.storeId()).isEqualTo(1L);
         assertThat(outboxPayloads("RELEASE")).isEmpty();
+        // 커밋 뒤 매출 SSE가 그 점포의 오늘 합계를 다시 보낸다
+        verify(salesStream).onSalesChanged(new SalesChangedEvent(1L));
     }
 
     @Test
@@ -253,7 +259,7 @@ class PaymentConfirmIntegrationTest {
         List<String> releases = outboxPayloads("RELEASE");
         assertThat(releases).hasSize(1);
         assertThat(MessageJson.fromJson(releases.get(0), ReleaseMessage.class).reason()).isEqualTo(ReleaseReason.PAYMENT_FAILED);
-        assertThat(outboxPayloads("CONFIRM")).isEmpty();
+        assertThat(outboxPayloads("CONFIRM")).isEmpty();        verify(salesStream, never()).onSalesChanged(any());
     }
 
     @Test
