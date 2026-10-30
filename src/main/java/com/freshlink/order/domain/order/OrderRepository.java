@@ -90,4 +90,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                                       @Param("refundStatus") RefundStatus refundStatus,
                                       @Param("now") OffsetDateTime now, @Param("afterDue") OffsetDateTime afterDue,
                                       @Param("afterId") Long afterId, Pageable pageable);
+
+    /** 그 점포의 그 상태 주문이 끝난 시각 중 start 이상 end 미만인 것 (점주 매출의 결제 전 취소 건수, A7) */
+    @Query("select o.closedAt from Order o where o.storeId = :storeId and o.status = :status"
+            + " and o.closedAt >= :start and o.closedAt < :end")
+    List<OffsetDateTime> findClosedAtForStore(@Param("storeId") Long storeId, @Param("status") OrderStatus status,
+                                              @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
 }
