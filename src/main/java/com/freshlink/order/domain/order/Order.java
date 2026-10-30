@@ -142,7 +142,7 @@ public class Order {
         this.productName = productName;
         this.unitPrice = unitPrice;
         this.amount = unitPrice * quantity;
-        this.status = OrderStatus.PAYMENT_WAITING;
+        changeStatus(OrderStatus.PAYMENT_WAITING);
         this.paymentWaitingAt = now;
         this.paymentExpiresAt = now.plus(PAYMENT_TIMEOUT);
     }
@@ -150,7 +150,7 @@ public class Order {
     /** RESERVE_FAILED 반영: 재고 확보 실패로 주문을 닫는다 */
     public void rejectReservation(OrderFailureReason reason, int availableQuantity, OffsetDateTime now) {
         requireReserving();
-        this.status = OrderStatus.OUT_OF_STOCK;
+        changeStatus(OrderStatus.OUT_OF_STOCK);
         this.failureReason = reason;
         this.availableQuantity = availableQuantity;
         this.closedAt = now;
@@ -164,20 +164,20 @@ public class Order {
         if (status != OrderStatus.PAYMENT_WAITING || paymentExpiresAt == null || !now.isBefore(paymentExpiresAt)) {
             throw new IllegalStateException("승인을 시작할 수 없다: orderId=" + id + " status=" + status);
         }
-        this.status = OrderStatus.PAYMENT_APPROVING;
+        changeStatus(OrderStatus.PAYMENT_APPROVING);
     }
 
     /** 토스 승인 성공 */
     public void markPaid(OffsetDateTime paidAt) {
         requireApproving();
-        this.status = OrderStatus.PAID;
+        changeStatus(OrderStatus.PAID);
         this.paidAt = paidAt;
     }
 
     /** 토스 확정 실패. 재고는 RELEASE로 돌려준다 */
     public void failPayment(OffsetDateTime now) {
         requireApproving();
-        this.status = OrderStatus.PAYMENT_FAILED;
+        changeStatus(OrderStatus.PAYMENT_FAILED);
         this.failureReason = OrderFailureReason.PAYMENT_FAILED;
         this.closedAt = now;
     }
@@ -187,7 +187,7 @@ public class Order {
         if (status != OrderStatus.PAYMENT_WAITING || paymentExpiresAt == null || now.isBefore(paymentExpiresAt)) {
             throw new IllegalStateException("만료할 수 없다: orderId=" + id + " status=" + status);
         }
-        this.status = OrderStatus.EXPIRED;
+        changeStatus(OrderStatus.EXPIRED);
         this.failureReason = OrderFailureReason.EXPIRED;
         this.closedAt = now;
     }
@@ -210,7 +210,7 @@ public class Order {
         if (status != OrderStatus.PAID || isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업할 수 없다: orderId=" + id + " status=" + status);
         }
-        this.status = OrderStatus.PICKED_UP;
+        changeStatus(OrderStatus.PICKED_UP);
         this.pickedUpAt = now;
     }
 
@@ -223,9 +223,9 @@ public class Order {
             throw new IllegalStateException("픽업 기한 전이다: orderId=" + id);
         }
         if (status == OrderStatus.PAID) {
-            this.status = OrderStatus.PICKUP_EXPIRED;
+            changeStatus(OrderStatus.PICKUP_EXPIRED);
         } else if (status == OrderStatus.PAYMENT_WAITING) {
-            this.status = OrderStatus.EXPIRED;
+            changeStatus(OrderStatus.EXPIRED);
             this.failureReason = OrderFailureReason.PICKUP_DEADLINE;
         } else {
             throw new IllegalStateException("픽업 기한으로 닫을 수 없다: orderId=" + id + " status=" + status);
@@ -236,9 +236,17 @@ public class Order {
     /** OP-02 재고 확보 결과가 오지 않아 RESERVING에 멈춘 주문을 닫는다. 재고는 RELEASE(EXPIRED)로 돌려준다 */
     public void closeStuck(OffsetDateTime now) {
         requireReserving();
-        this.status = OrderStatus.EXPIRED;
+        changeStatus(OrderStatus.EXPIRED);
         this.failureReason = OrderFailureReason.EXPIRED;
         this.closedAt = now;
+    }
+
+    /** 상태는 이 메서드로만 바꾼다. 허용되는 전이는 OrderStatus 표 한곳에서 정한다 */
+    private void changeStatus(OrderStatus next) {
+        if (!status.canChangeTo(next)) {
+            throw new IllegalStateException("허용되지 않는 상태 전이다: orderId=" + id + " " + status + " -> " + next);
+        }
+        this.status = next;
     }
 
     private void requireApproving() {
