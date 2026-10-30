@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -86,6 +87,16 @@ class SalesStreamTest {
         assertThat(created.get(0).sent).hasSize(2);
         assertThat(created.get(0).sent.get(1)).contains("paidAmount=1700, paidCount=1");
         assertThat(created.get(1).sent).hasSize(1);
+    }
+
+    @Test
+    void 연결할_때_합계_읽기가_실패하면_연결을_남기지_않고_오류를_그대로_던진다() {
+        when(salesService.today(7L, TODAY)).thenThrow(new IllegalStateException("DB 오류"));
+
+        assertThatThrownBy(() -> stream.subscribe(7L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("DB 오류");
+        assertThat(stream.connections(7L)).isZero();
     }
 
     @Test

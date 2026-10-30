@@ -41,14 +41,23 @@ public class SalesStream {
         this.clock = clock;
     }
 
-    /** 점포의 연결을 하나 더하고 지금 오늘 합계를 바로 보낸다 */
+    /**
+     * 점포의 연결을 하나 더하고 지금 오늘 합계를 바로 보낸다.
+     * 합계를 읽는 사이의 결제 완료도 받도록 연결을 먼저 넣는다. 읽기가 실패하면 Spring이 이 연결을 받지 못해
+     * onCompletion 등이 불리지 않으므로 여기서 빼고 오류를 그대로 던진다.
+     */
     public SseEmitter subscribe(Long storeId) {
         SseEmitter emitter = newEmitter();
         emitters.computeIfAbsent(storeId, k -> ConcurrentHashMap.newKeySet()).add(emitter);
         emitter.onCompletion(() -> remove(storeId, emitter));
         emitter.onTimeout(() -> remove(storeId, emitter));
         emitter.onError(e -> remove(storeId, emitter));
-        send(storeId, emitter, salesService.today(storeId, LocalDate.now(clock)));
+        try {
+            send(storeId, emitter, salesService.today(storeId, LocalDate.now(clock)));
+        } catch (RuntimeException e) {
+            remove(storeId, emitter);
+            throw e;
+        }
         return emitter;
     }
 
