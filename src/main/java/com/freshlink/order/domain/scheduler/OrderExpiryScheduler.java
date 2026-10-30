@@ -4,6 +4,7 @@ import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.PickupDeadlineService;
 import com.freshlink.order.domain.order.ReservingWatchService;
 import com.freshlink.order.domain.payment.PaymentAutoSyncService;
+import com.freshlink.order.domain.refund.RefundAutoSyncService;
 import java.time.Clock;
 import java.time.Duration;
 import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
@@ -17,9 +18,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 1분마다 결제 대기 만료와 픽업 기한 경과(A4)·재고 확인 지연 감지(A12), 10초마다 결제 결과 자동 조회(A11)를 돌린다.
- * 파드 2개 중 ShedLock 잠금(order-expiry, order-pickup-deadline, order-reserving-watch, order-payment-sync)을
- * 잡은 한 곳만 돈다.
+ * 1분마다 결제 대기 만료와 픽업 기한 경과(A4)·재고 확인 지연 감지(A12), 10초마다 결제 결과 자동 조회(A11)와
+ * 환불 결과 확인(A9)을 돌린다.
+ * 파드 2개 중 ShedLock 잠금(order-expiry, order-pickup-deadline, order-reserving-watch, order-payment-sync,
+ * order-refund-sync)을 잡은 한 곳만 돈다.
  * 잠금 이름을 나눠 한쪽이 길어져도 다른 쪽을 막지 않는다.
  * app.expiry.enabled=false면 빈을 만들지 않는다 (테스트)
  */
@@ -32,6 +34,7 @@ public class OrderExpiryScheduler {
     private static final String PICKUP_LOCK_NAME = "order-pickup-deadline";
     private static final String PAYMENT_SYNC_LOCK_NAME = "order-payment-sync";
     private static final String RESERVING_WATCH_LOCK_NAME = "order-reserving-watch";
+    private static final String REFUND_SYNC_LOCK_NAME = "order-refund-sync";
     /** 자동 조회는 10초마다 돌아 오래 잡지 않는다 (토스 조회 타임아웃 고려) */
     private static final Duration PAYMENT_SYNC_LOCK_AT_MOST_FOR = Duration.ofMinutes(2);
     private static final Duration PAYMENT_SYNC_LOCK_AT_LEAST_FOR = Duration.ofSeconds(5);
@@ -42,16 +45,18 @@ public class OrderExpiryScheduler {
     private final PickupDeadlineService pickupDeadlineService;
     private final PaymentAutoSyncService paymentAutoSyncService;
     private final ReservingWatchService reservingWatchService;
+    private final RefundAutoSyncService refundAutoSyncService;
     private final LockingTaskExecutor lockingTaskExecutor;
     private final Clock clock;
 
     public OrderExpiryScheduler(OrderExpiryService expiryService, PickupDeadlineService pickupDeadlineService,
                                 PaymentAutoSyncService paymentAutoSyncService, ReservingWatchService reservingWatchService,
-                                LockProvider lockProvider, Clock clock) {
+                                RefundAutoSyncService refundAutoSyncService, LockProvider lockProvider, Clock clock) {
         this.expiryService = expiryService;
         this.pickupDeadlineService = pickupDeadlineService;
         this.paymentAutoSyncService = paymentAutoSyncService;
         this.reservingWatchService = reservingWatchService;
+        this.refundAutoSyncService = refundAutoSyncService;
         this.lockingTaskExecutor = new DefaultLockingTaskExecutor(lockProvider);
         this.clock = clock;
     }
@@ -99,6 +104,19 @@ public class OrderExpiryScheduler {
             lockingTaskExecutor.executeWithLock((Runnable) reservingWatchService::detect, lock);
         } catch (RuntimeException e) {
             log.error("재고 확인 지연 감지 스케줄러 실행 실패", e);
+        }
+    }
+
+    /** A9 환불 결과 확인. 결제 자동 조회와 같은 주기(10초)·잠금 시간이고 잠금 이름만 다르다 */
+    @Scheduled(fixedDelayString = "${app.refund-sync.interval-ms:10000}",
+            initialDelayString = "${app.expiry.initial-delay-ms:30000}")
+    public void runRefundSync() {
+        LockConfiguration lock = new LockConfiguration(clock.instant(), REFUND_SYNC_LOCK_NAME,
+                PAYMENT_SYNC_LOCK_AT_MOST_FOR, PAYMENT_SYNC_LOCK_AT_LEAST_FOR);
+        try {
+            lockingTaskExecutor.executeWithLock((Runnable) refundAutoSyncService::syncDue, lock);
+        } catch (RuntimeException e) {
+            log.error("환불 결과 확인 스케줄러 실행 실패", e);
         }
     }
 }

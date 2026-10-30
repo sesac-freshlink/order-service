@@ -4,6 +4,7 @@ import com.freshlink.order.domain.order.OrderExpiryService;
 import com.freshlink.order.domain.order.PickupDeadlineService;
 import com.freshlink.order.domain.order.ReservingWatchService;
 import com.freshlink.order.domain.payment.PaymentAutoSyncService;
+import com.freshlink.order.domain.refund.RefundAutoSyncService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -29,9 +30,10 @@ class OrderExpirySchedulerTest {
     private final PickupDeadlineService pickupService = mock(PickupDeadlineService.class);
     private final PaymentAutoSyncService paymentSyncService = mock(PaymentAutoSyncService.class);
     private final ReservingWatchService reservingWatchService = mock(ReservingWatchService.class);
+    private final RefundAutoSyncService refundSyncService = mock(RefundAutoSyncService.class);
     private final LockProvider lockProvider = mock(LockProvider.class);
-    private final OrderExpiryScheduler scheduler =
-            new OrderExpiryScheduler(service, pickupService, paymentSyncService, reservingWatchService, lockProvider, clock);
+    private final OrderExpiryScheduler scheduler = new OrderExpiryScheduler(service, pickupService, paymentSyncService,
+            reservingWatchService, refundSyncService, lockProvider, clock);
 
     @Test
     void 잠금을_잡으면_만료를_돌리고_잠금_이름은_order_expiry() {
@@ -115,5 +117,26 @@ class OrderExpirySchedulerTest {
         ArgumentCaptor<LockConfiguration> lock = ArgumentCaptor.forClass(LockConfiguration.class);
         verify(lockProvider).lock(lock.capture());
         assertThat(lock.getValue().getName()).isEqualTo("order-reserving-watch");
+    }
+
+    @Test
+    void 환불_결과_확인은_따로_잠금_order_refund_sync로_돌린다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+
+        scheduler.runRefundSync();
+
+        verify(refundSyncService).syncDue();
+        verify(paymentSyncService, never()).syncDue();
+        ArgumentCaptor<LockConfiguration> lock = ArgumentCaptor.forClass(LockConfiguration.class);
+        verify(lockProvider).lock(lock.capture());
+        assertThat(lock.getValue().getName()).isEqualTo("order-refund-sync");
+    }
+
+    @Test
+    void 환불_결과_확인_중_예외가_나도_스케줄러_스레드는_죽지_않는다() {
+        when(lockProvider.lock(any())).thenReturn(Optional.of(mock(SimpleLock.class)));
+        when(refundSyncService.syncDue()).thenThrow(new IllegalStateException("toss down"));
+
+        scheduler.runRefundSync();
     }
 }
