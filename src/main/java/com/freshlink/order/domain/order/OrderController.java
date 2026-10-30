@@ -95,6 +95,20 @@ public class OrderController {
     }
 
     /**
+     * A7 결제 전 취소: 결제 대기 화면의 "주문 취소". 사유는 받지 않고 환불금액은 0원이다.
+     * 승인 중·결과 확인 중이거나 결제가 끝난 주문은 409 (결제 후 취소는 A8)
+     */
+    @PostMapping("/{orderId}/payment/cancel")
+    public OrderResponse cancelBeforePayment(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
+        requireCustomer(userId, role);
+        orderService.cancelBeforePayment(userId, orderId);
+        return orderService.getDetail(userId, orderId);
+    }
+
+    /**
      * A8 고객 결제 후 취소: 본인 PAID·환불 NONE·픽업 기한 이내 주문을 전체 취소·전액 환불한다(점주 승인 없음).
      * 환불이 실패(FAILED)한 주문은 같은 주소로 다시 신청한다(사유는 새로 받는다). 결과는 refundStatus로 알린다
      */

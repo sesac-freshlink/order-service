@@ -20,7 +20,7 @@ class OrderStatusTest {
     /** 명세 표대로 허용되는 전이. 여기 없는 조합은 모두 막혀야 한다 */
     private static final Map<OrderStatus, Set<OrderStatus>> EXPECTED = Map.of(
             RESERVING, EnumSet.of(PAYMENT_WAITING, OUT_OF_STOCK, EXPIRED),
-            PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED),
+            PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED, CANCELED),
             PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED),
             PAID, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED),
             READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
@@ -39,7 +39,8 @@ class OrderStatusTest {
 
     @Test
     void 끝난_상태는_어디로도_가지_않는다() {
-        for (OrderStatus done : EnumSet.of(OUT_OF_STOCK, PAYMENT_FAILED, EXPIRED, PICKED_UP, PICKUP_EXPIRED, REFUNDED)) {
+        for (OrderStatus done : EnumSet.of(OUT_OF_STOCK, PAYMENT_FAILED, EXPIRED, PICKED_UP, PICKUP_EXPIRED, REFUNDED,
+                CANCELED)) {
             for (OrderStatus to : OrderStatus.values()) {
                 assertThat(done.canChangeTo(to)).as("%s -> %s", done, to).isFalse();
             }

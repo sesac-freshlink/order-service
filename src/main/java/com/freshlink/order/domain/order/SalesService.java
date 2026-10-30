@@ -18,24 +18,27 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 점주 매출 대시보드 API. 점포는 X-Store-Id로만 고르고, 그 점포 주문의 승인 완료(DONE) 결제와 환불 완료(A9)를 센다.
- * 결제는 승인 시각, 환불은 환불 시각 기준 KST 날짜에 넣는다. 결제 전 취소 건수(A7)는 아직 0이다
+ * 결제는 승인 시각, 환불은 환불 시각, 결제 전 고객 취소(A7) 건수는 취소 시각 기준 KST 날짜에 넣는다
  */
 @Service
 public class SalesService {
 
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
+    private final OrderRepository orderRepository;
 
-    public SalesService(PaymentRepository paymentRepository, RefundRepository refundRepository) {
+    public SalesService(PaymentRepository paymentRepository, RefundRepository refundRepository,
+                        OrderRepository orderRepository) {
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
+        this.orderRepository = orderRepository;
     }
 
     @Transactional(readOnly = true)
     public SalesResponse sales(Long storeId, SalesPeriod period, SalesUnit unit) {
         Map<LocalDate, long[]> buckets = new LinkedHashMap<>();
         for (LocalDate start = unit.startOf(period.from()); !start.isAfter(period.to()); start = unit.next(start)) {
-            buckets.put(start, new long[4]); // [결제 금액, 결제 건수, 환불 금액, 환불 건수]
+            buckets.put(start, new long[5]); // [결제 금액, 결제 건수, 환불 금액, 환불 건수, 결제 전 취소 건수]
         }
         for (ApprovedPayment p : paymentRepository.findApprovedForStore(
                 storeId, PaymentStatus.DONE, period.start(), period.end())) {
@@ -49,9 +52,13 @@ public class SalesService {
             b[2] += r.amount();
             b[3]++;
         }
+        for (OffsetDateTime closedAt : orderRepository.findClosedAtForStore(
+                storeId, OrderStatus.CANCELED, period.start(), period.end())) {
+            buckets.get(unit.startOf(kstDate(closedAt)))[4]++;
+        }
         List<SalesResponse.Period> periods = new ArrayList<>(buckets.size());
         buckets.forEach((start, b) -> periods.add(
-                new SalesResponse.Period(unit.label(start), b[0], b[2], b[0] - b[2], b[1], b[3], 0)));
+                new SalesResponse.Period(unit.label(start), b[0], b[2], b[0] - b[2], b[1], b[3], b[4])));
         return new SalesResponse(period.from().toString(), period.to().toString(),
                 unit.name().toLowerCase(Locale.ROOT), periods);
     }

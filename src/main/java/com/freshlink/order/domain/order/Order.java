@@ -256,6 +256,20 @@ public class Order {
     }
 
     /**
+     * A7 결제 전 고객 취소: 결제 대기이고 결제 시간·픽업 기한 안일 때만. 승인 중·결과 확인 중에는 못 한다.
+     * 행을 잠근 채(findByIdForUpdate) 부르므로 승인 시작·만료 스케줄러와 동시에 확정되지 않는다.
+     * 재고는 부르는 쪽이 RELEASE(CANCELED)로 돌려준다. 환불금액은 0원이다
+     */
+    public void cancelBeforePayment(OffsetDateTime now) {
+        if (status != OrderStatus.PAYMENT_WAITING || paymentExpiresAt == null || !now.isBefore(paymentExpiresAt)
+                || isPickupDeadlinePassed(now)) {
+            throw new IllegalStateException("결제 전 취소를 할 수 없다: orderId=" + id + " status=" + status);
+        }
+        changeStatus(OrderStatus.CANCELED);
+        this.closedAt = now;
+    }
+
+    /**
      * A8 취소 요청이 유효한지. 결제 완료이면서 처음 요청(환불 NONE·기한 이내)이거나 실패한 환불의 재신청(FAILED)이어야 한다.
      * 기한 안에 시작한 환불은 FAILED여도 기한 뒤 재신청을 허용한다 (추가 명세 0.4, A9 픽업·환불 경합)
      */

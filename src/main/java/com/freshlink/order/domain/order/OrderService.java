@@ -1,6 +1,8 @@
 package com.freshlink.order.domain.order;
 
 import com.freshlink.common.error.BusinessException;
+import com.freshlink.common.message.command.ReleaseMessage;
+import com.freshlink.common.message.command.ReleaseReason;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.outbox.OutboxWriter;
@@ -166,6 +168,36 @@ public class OrderService {
         }
         order.pickUp(now);
         log.info("픽업 완료 orderId={} storeId={}", orderId, storeId);
+        return order;
+    }
+
+    /**
+     * A7 결제 전 고객 취소. 행을 잠근 채 확인해 승인 시작·만료 스케줄러와 겹쳐도 한 번만 바뀐다.
+     * 없으면 404, 남의 주문이면 403, 결제 대기가 아니면(승인 중·결제 완료 등) 409 ORDER_NOT_CANCELABLE,
+     * 결제 시간이 지났으면 409 ORDER_EXPIRED, 픽업 기한이 지났으면 409 PICKUP_DEADLINE_PASSED (스케줄러가 아직 안 돌았어도).
+     * CANCELED와 RELEASE(CANCELED) Outbox를 한 트랜잭션에 저장한다
+     */
+    @Transactional
+    public Order cancelBeforePayment(String customerId, Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!order.getCustomerId().equals(customerId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED);
+        }
+        // 결제 대기면 결제 마감이 늘 있다(RESERVED 반영 때 정함). 없으면 잘못된 데이터라 취소를 받지 않는다
+        if (order.getStatus() != OrderStatus.PAYMENT_WAITING || order.getPaymentExpiresAt() == null) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_CANCELABLE);
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (!now.isBefore(order.getPaymentExpiresAt())) {
+            throw new BusinessException(OrderErrorCode.ORDER_EXPIRED);
+        }
+        if (order.isPickupDeadlinePassed(now)) {
+            throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
+        }
+        order.cancelBeforePayment(now);
+        outboxWriter.save(commandsQueue, ReleaseMessage.of(orderId, order.getStoreId(), ReleaseReason.CANCELED));
+        log.info("결제 전 취소 orderId={}", orderId);
         return order;
     }
 
