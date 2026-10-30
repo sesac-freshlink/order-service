@@ -130,6 +130,16 @@ class CancelBeforePaymentIntegrationTest {
     }
 
     @Test
+    void 결제_마감이_없는_결제_대기_주문은_500이_아니라_409_ORDER_NOT_CANCELABLE() throws Exception {
+        long id = waiting();
+        jdbc.update("UPDATE orders SET payment_expires_at = NULL WHERE id = ?", id);
+
+        cancel(customer, id).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_CANCELABLE"));
+        assertThat(releasesOf(id)).isEmpty();
+    }
+
+    @Test
     void 결제_시간이나_픽업_기한이_지났으면_스케줄러가_안_돌았어도_409() throws Exception {
         long expired = order("PAYMENT_WAITING", NOW, TODAY_END);
         long pastDeadline = order("PAYMENT_WAITING", NOW.plusMinutes(5), TODAY_END.minusDays(1));

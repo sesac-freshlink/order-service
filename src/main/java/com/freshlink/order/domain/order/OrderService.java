@@ -146,7 +146,8 @@ public class OrderService {
         if (!order.getCustomerId().equals(customerId)) {
             throw new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED);
         }
-        if (order.getStatus() != OrderStatus.PAYMENT_WAITING) {
+        // 결제 대기면 결제 마감이 늘 있다(RESERVED 반영 때 정함). 없으면 잘못된 데이터라 취소를 받지 않는다
+        if (order.getStatus() != OrderStatus.PAYMENT_WAITING || order.getPaymentExpiresAt() == null) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_CANCELABLE);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
