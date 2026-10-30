@@ -44,6 +44,8 @@ class OrderControllerTest {
     OrderService orderService;
     @MockitoBean
     PaymentService paymentService;
+    @MockitoBean
+    SalesService salesService;
 
     private MockHttpServletRequestBuilder valid(String body) {
         return post("/orders").contentType(MediaType.APPLICATION_JSON).content(body)

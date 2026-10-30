@@ -24,4 +24,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     /** payment_key는 유니크다 (uk_payment_key). 다른 주문이 이미 쓴 키인지 본다 */
     boolean existsByPaymentKey(String paymentKey);
+
+    /** 그 점포 주문의 결제 중 그 상태이고 승인 시각이 start 이상 end 미만인 것 (점주 매출) */
+    @Query("select new com.freshlink.order.domain.payment.ApprovedPayment(p.amount, p.approvedAt)"
+            + " from Payment p, Order o where o.id = p.orderId and o.storeId = :storeId and p.status = :status"
+            + " and p.approvedAt >= :start and p.approvedAt < :end")
+    List<ApprovedPayment> findApprovedForStore(@Param("storeId") Long storeId, @Param("status") PaymentStatus status,
+                                               @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
 }
