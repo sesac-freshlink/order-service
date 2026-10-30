@@ -115,7 +115,7 @@ order-service/
 
 ## 5-1. 오류 처리
 
-규칙은 .github 레포 `docs/백엔드-공통-규칙.md` 6장. 응답 모양은 common 라이브러리, 오류 목록과 핸들러는 이 레포에 있다.
+규칙은 .github 레포 `docs/규칙/백엔드-공통-규칙.md` 6장. 응답 모양은 common 라이브러리, 오류 목록과 핸들러는 이 레포에 있다.
 
 | 할 일 | 방법 |
 | --- | --- |
@@ -129,7 +129,7 @@ order-service/
 >
 > **DB 없이 IntelliJ에서 띄우기:** Docker Desktop을 켜고 `src/test/java/com/freshlink/order/TestOrderServiceApplication`을 Run 한다. DB를 따로 띄우지 않아도 MySQL 8.4 이미지를 받아 컨테이너로 띄우고 자동으로 붙는다 (Testcontainers 라이브러리 기능). main 소스 변경사항이 그대로 반영된다. AWS 큐에 붙지 않고 띄우려면 실행 설정에 `--spring.cloud.aws.sqs.listener.auto-startup=false`를 준다(결과 쪽지를 받지 않는다). RDS가 준비되면 아래처럼 `DB_URL` 환경 변수만 주고 `OrderServiceApplication`으로 실행한다.
 
-개발할 때도 AWS dev 환경의 RDS·SQS·Cognito를 그대로 쓴다. AWS 로그인, DB 포트 포워딩(SSM), 개인 큐 설정은 [개발 환경 접속 가이드](https://github.com/sesac-freshlink/.github/blob/main/docs/개발환경-접속.md)를 따른다.
+개발할 때도 AWS dev 환경의 RDS·SQS·Cognito를 그대로 쓴다. AWS 로그인, DB 포트 포워딩(SSM), 개인 큐 설정은 [개발 환경 접속 가이드](https://github.com/sesac-freshlink/.github/blob/main/docs/팀원-가이드/0-개발환경-접속.md)를 따른다.
 
 ```bash
 export SPRING_PROFILES_ACTIVE=dev

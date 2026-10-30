@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 
 /**
  * 모든 오류를 common의 {@link ErrorResponse}(code, message, traceId) 모양으로 바꿔 응답한다.
- * 규칙은 .github 레포 docs/백엔드-공통-규칙.md 6장.
+ * 규칙은 .github 레포 docs/규칙/백엔드-공통-규칙.md 6장.
  *
  * <table>
  *   <tr><th>예외</th><th>상태</th><th>code</th></tr>
