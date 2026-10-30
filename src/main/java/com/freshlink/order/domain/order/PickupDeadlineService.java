@@ -3,6 +3,7 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReleaseReason;
 import com.freshlink.common.outbox.OutboxWriter;
+import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -15,9 +16,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * A4 픽업 기한 경과 (추가 명세 A4). 기한이 지난 결제 완료·픽업 준비 완료 주문은 PICKUP_EXPIRED(쪽지 없음),
+ * A4 픽업 기한 경과 (추가 명세 A4). 기한이 지난 결제 완료·픽업 준비 완료(환불 NONE) 주문은 PICKUP_EXPIRED(쪽지 없음),
  * 결제 대기 주문은 EXPIRED·사유 PICKUP_DEADLINE + RELEASE(EXPIRED).
- * 주문마다 트랜잭션을 따로 두고, 잠근 뒤 상태·기한을 다시 확인해 픽업 확인·결제 승인과 동시에 확정되지 않게 한다
+ * 기한 안에 시작한 환불(처리 중·확인 중·실패)이 있는 주문은 기한이 지나도 바꾸지 않는다(추가 명세 0.4).
+ * 주문마다 트랜잭션을 따로 두고, 잠근 뒤 상태·기한을 다시 확인해 픽업 확인·결제 승인·환불 요청과 동시에 확정되지 않게 한다
  */
 @Service
 public class PickupDeadlineService {
@@ -57,7 +59,7 @@ public class PickupDeadlineService {
     public int expireDue(int limit) {
         OffsetDateTime now = OffsetDateTime.now(clock);
         PageRequest page = PageRequest.of(0, limit);
-        List<DueOrder> batch = orderRepository.findPickupDue(TARGETS, now, page);
+        List<DueOrder> batch = orderRepository.findPickupDue(TARGETS, RefundStatus.NONE, now, page);
         int closed = 0;
         for (int pages = 1; ; pages++) {
             for (DueOrder due : batch) {
@@ -77,7 +79,7 @@ public class PickupDeadlineService {
                 break;
             }
             DueOrder last = batch.get(batch.size() - 1);
-            batch = orderRepository.findPickupDueAfter(TARGETS, now, last.due(), last.id(), page);
+            batch = orderRepository.findPickupDueAfter(TARGETS, RefundStatus.NONE, now, last.due(), last.id(), page);
         }
         if (closed > 0) {
             log.info("픽업 기한 경과 {}건", closed);
@@ -85,10 +87,11 @@ public class PickupDeadlineService {
         return closed;
     }
 
-    /** 잠근 뒤 다시 확인한다. 그사이 픽업 확인·결제 승인이 먼저 됐으면 건너뛴다 */
+    /** 잠근 뒤 다시 확인한다. 그사이 픽업 확인·결제 승인·환불 요청이 먼저 됐으면 건너뛴다 */
     private boolean expireOne(Long orderId, OffsetDateTime now) {
         Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
-        if (order == null || !TARGETS.contains(order.getStatus()) || !order.isPickupDeadlinePassed(now)) {
+        if (order == null || !TARGETS.contains(order.getStatus()) || order.getRefundStatus() != RefundStatus.NONE
+                || !order.isPickupDeadlinePassed(now)) {
             return false;
         }
         boolean waiting = order.getStatus() == OrderStatus.PAYMENT_WAITING;

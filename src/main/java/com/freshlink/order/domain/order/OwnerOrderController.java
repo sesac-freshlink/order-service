@@ -3,6 +3,9 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.common.web.AuthHeaders;
+import com.freshlink.order.domain.refund.CancelRequest;
+import com.freshlink.order.domain.refund.CancelResponse;
+import com.freshlink.order.domain.refund.RefundService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -10,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,11 +28,14 @@ public class OwnerOrderController {
     private final OrderService orderService;
     private final SalesService salesService;
     private final SalesStream salesStream;
+    private final RefundService refundService;
 
-    public OwnerOrderController(OrderService orderService, SalesService salesService, SalesStream salesStream) {
+    public OwnerOrderController(OrderService orderService, SalesService salesService, SalesStream salesStream,
+                                RefundService refundService) {
         this.orderService = orderService;
         this.salesService = salesService;
         this.salesStream = salesStream;
+        this.refundService = refundService;
     }
 
     /** OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때 */
@@ -87,6 +94,25 @@ public class OwnerOrderController {
             throw new BusinessException(OrderErrorCode.FORBIDDEN);
         }
         return PickupResponse.from(orderService.pickUp(parseStoreId(storeIdHeader), orderId));
+    }
+
+    /**
+     * A8 점주 결제 후 취소: 자기 점포의 픽업 대기(PAID·환불 NONE·기한 이내) 주문을 전체 취소·전액 환불한다.
+     * 환불이 실패(FAILED)한 주문은 같은 주소로 다시 시도한다. 결과는 refundStatus로 알린다
+     */
+    @PostMapping("/{orderId}/cancel")
+    public CancelResponse cancel(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @RequestHeader(name = AuthHeaders.STORE_ID, required = false) String storeIdHeader,
+            @RequestBody(required = false) CancelRequest request) {
+        if (!AuthHeaders.hasRole(role, AuthHeaders.ROLE_OWNER)) {
+            throw new BusinessException(OrderErrorCode.FORBIDDEN);
+        }
+        // 요청자 기록용이다. 형식이 낯설면 남기지 않는다 (refund.requester_id 36자)
+        String ownerId = userId == null || userId.isBlank() || userId.length() > 36 ? null : userId;
+        return refundService.cancelByOwner(parseStoreId(storeIdHeader), ownerId, orderId, request);
     }
 
     /**

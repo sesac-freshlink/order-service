@@ -7,6 +7,9 @@ import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.domain.payment.Payment;
 import com.freshlink.order.domain.payment.PaymentRepository;
+import com.freshlink.order.domain.refund.Refund;
+import com.freshlink.order.domain.refund.RefundRepository;
+import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -39,6 +42,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
+    private final RefundRepository refundRepository;
     private final OutboxWriter outboxWriter;
     private final TransactionTemplate transactionTemplate;
     private final String commandsQueue;
@@ -46,11 +50,13 @@ public class OrderService {
     private final Clock clock;
 
     public OrderService(OrderRepository orderRepository, PaymentRepository paymentRepository,
-                        OutboxWriter outboxWriter, TransactionTemplate transactionTemplate,
+                        RefundRepository refundRepository, OutboxWriter outboxWriter,
+                        TransactionTemplate transactionTemplate,
                         @Value("${app.queue.commands}") String commandsQueue,
                         @Value("${app.queue.notifications}") String notificationsQueue, Clock clock) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
+        this.refundRepository = refundRepository;
         this.outboxWriter = outboxWriter;
         this.transactionTemplate = transactionTemplate;
         this.commandsQueue = commandsQueue;
@@ -90,24 +96,29 @@ public class OrderService {
         return order;
     }
 
-    /** OR-02 응답: 주문 + 결제 내역(승인 시작 전이면 null) + 서버 현재 시각 */
+    /** OR-02 응답: 주문 + 결제 내역(승인 시작 전이면 null) + 마지막 환불 시도(없으면 null, A8) + 서버 현재 시각 */
     @Transactional(readOnly = true)
     public OrderResponse getDetail(String customerId, Long orderId) {
         Order order = get(customerId, orderId);
         Payment payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
-        return OrderResponse.from(order, payment, OffsetDateTime.now(clock));
+        Refund refund = refundRepository.findTopByOrderIdOrderByAttemptNoDesc(order.getId()).orElse(null);
+        return OrderResponse.from(order, payment, refund, OffsetDateTime.now(clock));
     }
 
-    /** OR-04 점주 신규 주문 목록: 그 점포의 픽업 대기(결제 완료·픽업 준비 완료) 주문, 결제 완료 시각 최신순 (페이지 없음) */
+    /**
+     * OR-04 점주 신규 주문 목록: 그 점포의 픽업 대기(결제 완료·픽업 준비 완료, 환불 NONE) 주문, 결제 완료 시각 최신순 (페이지 없음).
+     * 환불이 시작된 주문은 A6 취소·환불 구분에 나온다
+     */
     @Transactional(readOnly = true)
     public List<Order> listPaidForStore(Long storeId) {
-        return orderRepository.findByStoreIdAndStatusInOrderByPaidAtDescIdDesc(storeId, PICKUP_WAITING);
+        return orderRepository.findByStoreIdAndStatusInAndRefundStatusOrderByPaidAtDescIdDesc(storeId, PICKUP_WAITING,
+                RefundStatus.NONE);
     }
 
     /**
      * N-02 점주 픽업 준비 완료. 행을 잠근 채 확인해 같은 주문을 두 번 누르거나 기한 스케줄러와 겹쳐도 한 번만 바뀐다.
      * 없으면 404, 다른 점포면 403, 이미 준비 완료면 그대로 돌려준다(알림도 다시 보내지 않는다),
-     * 결제 완료가 아니면 409, 기한이 지났으면 409 (스케줄러가 아직 안 돌았어도).
+     * 결제 완료·환불 NONE이 아니면 409(환불이 시작된 주문은 준비하지 않는다), 기한이 지났으면 409 (스케줄러가 아직 안 돌았어도).
      * READY_FOR_PICKUP과 고객 픽업 준비 완료 알림(NotificationMessage.pickupReady) Outbox를 한 트랜잭션에 저장한다
      */
     @Transactional
@@ -120,7 +131,7 @@ public class OrderService {
         if (order.getStatus() == OrderStatus.READY_FOR_PICKUP) {
             return order;
         }
-        if (order.getStatus() != OrderStatus.PAID) {
+        if (order.getStatus() != OrderStatus.PAID || order.getRefundStatus() != RefundStatus.NONE) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_READYABLE);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
@@ -136,8 +147,8 @@ public class OrderService {
     }
 
     /**
-     * A5 점주 픽업 확인. 행을 잠근 채 확인해 같은 주문을 두 번 누르거나 기한 스케줄러와 겹쳐도 한 번만 바뀐다.
-     * 없으면 404, 다른 점포면 403, 픽업 준비 완료가 아니면 409(준비 완료를 먼저 거친다, N-02), 기한이 지났으면 409
+     * A5 점주 픽업 확인. 행을 잠근 채 확인해 같은 주문을 두 번 누르거나 기한 스케줄러·환불 요청과 겹쳐도 한 번만 바뀐다.
+     * 없으면 404, 다른 점포면 403, 픽업 준비 완료·환불 NONE이 아니면 409(준비 완료를 먼저 거친다, N-02), 기한이 지났으면 409
      */
     @Transactional
     public Order pickUp(Long storeId, Long orderId) {
@@ -146,7 +157,7 @@ public class OrderService {
         if (!order.getStoreId().equals(storeId)) {
             throw new BusinessException(OrderErrorCode.STORE_ORDER_ACCESS_DENIED);
         }
-        if (order.getStatus() != OrderStatus.READY_FOR_PICKUP) {
+        if (order.getStatus() != OrderStatus.READY_FOR_PICKUP || order.getRefundStatus() != RefundStatus.NONE) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_PICKABLE);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
@@ -176,25 +187,31 @@ public class OrderService {
                                                                      OrderPeriod period, OrderPageRequest paging) {
         PageRequest pageable = PageRequest.of(paging.page(), paging.size(),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-        return PageResponse.of(orderRepository.findByCustomerIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-                        customerId, tab.statuses(), period.start(), period.end(), pageable),
+        return PageResponse.of(orderRepository.findForCustomer(customerId, tab.statuses(), OrderStatus.PAID,
+                        tab.paidRefundStatuses(), period.start(), period.end(), pageable),
                 CustomerOrderSummaryResponse::from);
     }
 
-    /** A6 점주 주문 목록: 그 점포 주문을 구분별·기간별로, 결제 내역은 쿼리 한 번으로 붙인다 */
+    /** A6 점주 주문 목록: 그 점포 주문을 구분별·기간별로, 결제 내역과 마지막 환불 시도는 쿼리 한 번씩으로 붙인다 */
     @Transactional(readOnly = true)
     public PageResponse<OwnerOrderResponse> listForStore(Long storeId, OwnerOrderTab tab, OrderPeriod period,
                                                          OrderPageRequest paging) {
         if (tab.statuses().isEmpty()) {
             return PageResponse.empty(paging.page(), paging.size());
         }
-        Page<Order> page = orderRepository.findByStoreIdAndStatusInAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-                storeId, tab.statuses(), period.start(), period.end(),
+        Page<Order> page = orderRepository.findForStore(storeId, tab.statuses(), OrderStatus.PAID,
+                tab.paidRefundStatuses(), period.start(), period.end(),
                 PageRequest.of(paging.page(), paging.size(), tab.sort()));
-        Map<Long, Payment> payments = page.isEmpty() ? Map.of()
-                : paymentRepository.findByOrderIdIn(page.getContent().stream().map(Order::getId).toList())
-                        .stream().collect(Collectors.toMap(Payment::getOrderId, Function.identity()));
-        return PageResponse.of(page, o -> OwnerOrderResponse.from(o, payments.get(o.getId())));
+        if (page.isEmpty()) {
+            return PageResponse.of(page, o -> OwnerOrderResponse.from(o, null));
+        }
+        List<Long> ids = page.getContent().stream().map(Order::getId).toList();
+        Map<Long, Payment> payments = paymentRepository.findByOrderIdIn(ids)
+                .stream().collect(Collectors.toMap(Payment::getOrderId, Function.identity()));
+        Map<Long, Refund> refunds = refundRepository.findByOrderIdIn(ids).stream()
+                .collect(Collectors.toMap(Refund::getOrderId, Function.identity(),
+                        (a, b) -> a.getAttemptNo() >= b.getAttemptNo() ? a : b));
+        return PageResponse.of(page, o -> OwnerOrderResponse.from(o, payments.get(o.getId()), refunds.get(o.getId())));
     }
 
     /** 주문 저장, 주문번호 채우기, RESERVE 쪽지 outbox 저장을 한 트랜잭션으로 한다 */

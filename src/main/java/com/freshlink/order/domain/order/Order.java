@@ -1,5 +1,6 @@
 package com.freshlink.order.domain.order;
 
+import com.freshlink.order.domain.refund.RefundStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -85,6 +86,19 @@ public class Order {
 
     @Column(name = "picked_up_at")
     private OffsetDateTime pickedUpAt;
+
+    /** 환불 상태 (A9, V8). 환불이 끝나기 전까지 주문은 PAID를 유지하고 이 값으로 픽업·추가 요청을 막는다 */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_status", nullable = false, length = 20)
+    private RefundStatus refundStatus = RefundStatus.NONE;
+
+    /** 마지막 취소 요청 시각 (A8, V8). 점주 취소·환불 구분을 이 순서로 보여 준다 */
+    @Column(name = "cancel_requested_at")
+    private OffsetDateTime cancelRequestedAt;
+
+    /** 환불 완료 시각 (A9, V8. 토스 canceledAt) */
+    @Column(name = "refunded_at")
+    private OffsetDateTime refundedAt;
 
     @Column(name = "closed_at")
     private OffsetDateTime closedAt;
@@ -205,17 +219,17 @@ public class Order {
         return pickupDeadline != null && now.isAfter(pickupDeadline);
     }
 
-    /** N-02 점주 픽업 준비 완료: 결제 완료이고 기한 이내일 때만. 되돌리기는 없다 */
+    /** N-02 점주 픽업 준비 완료: 결제 완료·환불 NONE이고 기한 이내일 때만. 되돌리기는 없다 */
     public void markReadyForPickup(OffsetDateTime now) {
-        if (status != OrderStatus.PAID || isPickupDeadlinePassed(now)) {
+        if (status != OrderStatus.PAID || refundStatus != RefundStatus.NONE || isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업 준비 완료로 바꿀 수 없다: orderId=" + id + " status=" + status);
         }
         changeStatus(OrderStatus.READY_FOR_PICKUP);
     }
 
-    /** A5 점주 픽업 확인: 픽업 준비 완료이고 기한 이내일 때만. 되돌리기는 없다 */
+    /** A5 점주 픽업 확인: 픽업 준비 완료·환불 NONE이고 기한 이내일 때만. 되돌리기는 없다 */
     public void pickUp(OffsetDateTime now) {
-        if (status != OrderStatus.READY_FOR_PICKUP || isPickupDeadlinePassed(now)) {
+        if (status != OrderStatus.READY_FOR_PICKUP || refundStatus != RefundStatus.NONE || isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업할 수 없다: orderId=" + id + " status=" + status);
         }
         changeStatus(OrderStatus.PICKED_UP);
@@ -230,7 +244,7 @@ public class Order {
         if (!isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업 기한 전이다: orderId=" + id);
         }
-        if (status == OrderStatus.PAID || status == OrderStatus.READY_FOR_PICKUP) {
+        if ((status == OrderStatus.PAID || status == OrderStatus.READY_FOR_PICKUP) && refundStatus == RefundStatus.NONE) {
             changeStatus(OrderStatus.PICKUP_EXPIRED);
         } else if (status == OrderStatus.PAYMENT_WAITING) {
             changeStatus(OrderStatus.EXPIRED);
@@ -238,6 +252,46 @@ public class Order {
         } else {
             throw new IllegalStateException("픽업 기한으로 닫을 수 없다: orderId=" + id + " status=" + status);
         }
+        this.closedAt = now;
+    }
+
+    /**
+     * A8 취소 요청이 유효한지. 결제 완료이면서 처음 요청(환불 NONE·기한 이내)이거나 실패한 환불의 재신청(FAILED)이어야 한다.
+     * 기한 안에 시작한 환불은 FAILED여도 기한 뒤 재신청을 허용한다 (추가 명세 0.4, A9 픽업·환불 경합)
+     */
+    public boolean canStartRefund(OffsetDateTime now) {
+        if (status != OrderStatus.PAID) {
+            return false;
+        }
+        return refundStatus == RefundStatus.FAILED
+                || (refundStatus == RefundStatus.NONE && !isPickupDeadlinePassed(now));
+    }
+
+    /** A8 취소 요청: 환불 처리 중으로 바꾸고 요청 시각을 남긴다. 주문 상태는 PAID 그대로다 */
+    public void startRefund(OffsetDateTime now) {
+        if (!canStartRefund(now)) {
+            throw new IllegalStateException("환불을 시작할 수 없다: orderId=" + id + " status=" + status
+                    + " refundStatus=" + refundStatus);
+        }
+        changeRefundStatus(RefundStatus.REQUESTED);
+        this.cancelRequestedAt = now;
+    }
+
+    /** A9 환불 결과 불명: 확인 중 */
+    public void checkRefund() {
+        changeRefundStatus(RefundStatus.CHECKING);
+    }
+
+    /** A9 명확한 환불 실패: 재신청·재시도를 받는다. 해결 전까지 픽업은 막힌다 */
+    public void failRefund() {
+        changeRefundStatus(RefundStatus.FAILED);
+    }
+
+    /** A9 토스 취소 성공 확인: REFUNDED로 닫는다. 재고는 부르는 쪽이 RETURN으로 되돌린다 (A10) */
+    public void completeRefund(OffsetDateTime refundedAt, OffsetDateTime now) {
+        changeRefundStatus(RefundStatus.COMPLETED);
+        changeStatus(OrderStatus.REFUNDED);
+        this.refundedAt = refundedAt;
         this.closedAt = now;
     }
 
@@ -255,6 +309,14 @@ public class Order {
             throw new IllegalStateException("허용되지 않는 상태 전이다: orderId=" + id + " " + status + " -> " + next);
         }
         this.status = next;
+    }
+
+    /** 환불 상태는 이 메서드로만 바꾼다. 허용되는 전이는 RefundStatus 표 한곳에서 정한다 */
+    private void changeRefundStatus(RefundStatus next) {
+        if (!refundStatus.canChangeTo(next)) {
+            throw new IllegalStateException("허용되지 않는 환불 상태 전이다: orderId=" + id + " " + refundStatus + " -> " + next);
+        }
+        this.refundStatus = next;
     }
 
     private void requireApproving() {
@@ -288,6 +350,9 @@ public class Order {
     public OffsetDateTime getPaidAt() { return paidAt; }
     public OffsetDateTime getPickupDeadline() { return pickupDeadline; }
     public OffsetDateTime getPickedUpAt() { return pickedUpAt; }
+    public RefundStatus getRefundStatus() { return refundStatus; }
+    public OffsetDateTime getCancelRequestedAt() { return cancelRequestedAt; }
+    public OffsetDateTime getRefundedAt() { return refundedAt; }
     /** A12 재고 확인 중(RESERVING) 경고를 남겼다고 표시한다. 상태는 바꾸지 않는다 */
     public void markReservingAlerted(OffsetDateTime now) {
         if (status != OrderStatus.RESERVING) {
