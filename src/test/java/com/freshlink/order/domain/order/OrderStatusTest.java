@@ -22,7 +22,7 @@ class OrderStatusTest {
             RESERVING, EnumSet.of(PAYMENT_WAITING, OUT_OF_STOCK, EXPIRED),
             PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED),
             PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED),
-            PAID, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
+            PAID, EnumSet.of(PICKED_UP, PICKUP_EXPIRED, REFUNDED));
 
     @Test
     void 명세_표에_있는_전이만_허용한다() {
@@ -38,7 +38,7 @@ class OrderStatusTest {
 
     @Test
     void 끝난_상태는_어디로도_가지_않는다() {
-        for (OrderStatus done : EnumSet.of(OUT_OF_STOCK, PAYMENT_FAILED, EXPIRED, PICKED_UP, PICKUP_EXPIRED)) {
+        for (OrderStatus done : EnumSet.of(OUT_OF_STOCK, PAYMENT_FAILED, EXPIRED, PICKED_UP, PICKUP_EXPIRED, REFUNDED)) {
             for (OrderStatus to : OrderStatus.values()) {
                 assertThat(done.canChangeTo(to)).as("%s -> %s", done, to).isFalse();
             }

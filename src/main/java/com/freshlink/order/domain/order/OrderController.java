@@ -6,6 +6,9 @@ import com.freshlink.order.common.web.AuthHeaders;
 import com.freshlink.order.domain.payment.PaymentConfirmRequest;
 import com.freshlink.order.domain.payment.PaymentConfirmResponse;
 import com.freshlink.order.domain.payment.PaymentService;
+import com.freshlink.order.domain.refund.CancelRequest;
+import com.freshlink.order.domain.refund.CancelResponse;
+import com.freshlink.order.domain.refund.RefundService;
 import jakarta.validation.Valid;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -30,10 +33,12 @@ public class OrderController {
 
     private final OrderService orderService;
     private final PaymentService paymentService;
+    private final RefundService refundService;
 
-    public OrderController(OrderService orderService, PaymentService paymentService) {
+    public OrderController(OrderService orderService, PaymentService paymentService, RefundService refundService) {
         this.orderService = orderService;
         this.paymentService = paymentService;
+        this.refundService = refundService;
     }
 
     /** OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200 */
@@ -87,6 +92,20 @@ public class OrderController {
             @Valid @RequestBody PaymentConfirmRequest request) {
         requireCustomer(userId, role);
         return paymentService.confirm(userId, orderId, request);
+    }
+
+    /**
+     * A8 고객 결제 후 취소: 본인 PAID·환불 NONE·픽업 기한 이내 주문을 전체 취소·전액 환불한다(점주 승인 없음).
+     * 환불이 실패(FAILED)한 주문은 같은 주소로 다시 신청한다(사유는 새로 받는다). 결과는 refundStatus로 알린다
+     */
+    @PostMapping("/{orderId}/cancel")
+    public CancelResponse cancel(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @RequestBody(required = false) CancelRequest request) {
+        requireCustomer(userId, role);
+        return refundService.cancelByCustomer(userId, orderId, request);
     }
 
     /**

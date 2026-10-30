@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,13 +14,14 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 /**
- * 토스페이먼츠 결제 승인 호출. 인증은 Basic(시크릿 키 + ":"), 같은 승인 시도에는 같은 Idempotency-Key를 쓴다.
+ * 토스페이먼츠 결제 승인·조회·취소 호출. 인증은 Basic(시크릿 키 + ":"), 같은 승인·취소 시도에는 같은 Idempotency-Key를 쓴다.
  * 예외를 던지지 않고 결과를 분류해 돌려준다. 타임아웃·연결 끊김·응답 해석 실패는 결과 불명이다
  */
 public class TossPaymentsClient {
 
     private static final Logger log = LoggerFactory.getLogger(TossPaymentsClient.class);
     private static final String DONE = "DONE";
+    private static final String CANCELED = "CANCELED";
 
     private final RestClient restClient;
     private final String secretKey;
@@ -90,6 +92,71 @@ public class TossPaymentsClient {
         }
     }
 
+    /**
+     * A9 결제 전액 취소 (POST /v1/payments/{paymentKey}/cancel, 금액을 비우면 전액). 예외를 던지지 않는다.
+     * 같은 시도에는 같은 Idempotency-Key를 쓴다. 타임아웃·연결 끊김·응답 해석 실패는 결과 불명이다
+     */
+    public TossCancelResult cancel(String paymentKey, String cancelReason, String idempotencyKey) {
+        try {
+            return restClient.post()
+                    .uri("/v1/payments/{paymentKey}/cancel", paymentKey)
+                    .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                    .header("Idempotency-Key", idempotencyKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("cancelReason", cancelReason))
+                    .exchange((request, response) -> {
+                        if (response.getStatusCode().is2xxSuccessful()) {
+                            TossPayment body = response.bodyTo(TossPayment.class);
+                            if (body != null && CANCELED.equals(body.status())) {
+                                return TossCancelResult.canceled(body.status(), parse(body.lastCanceledAt()));
+                            }
+                            String status = body == null ? null : body.status();
+                            log.warn("토스 취소 응답이 성공인데 CANCELED가 아니다 status={}", status);
+                            return TossCancelResult.error(TossCancelOutcome.UNKNOWN, null, "status=" + status);
+                        }
+                        TossError error = readError(response);
+                        String code = error == null ? null : error.code();
+                        String message = error == null ? null : error.message();
+                        return TossCancelResult.error(TossCancelErrorClassifier.classify(code), code, message);
+                    });
+        } catch (RestClientException e) {
+            // 취소가 됐는지 모르므로 실패로 보지 않는다
+            log.warn("토스 취소 호출 결과를 알 수 없다 cause={}", e.getClass().getSimpleName());
+            return TossCancelResult.error(TossCancelOutcome.UNKNOWN, null, e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * A9 환불 결과 확인: 결제를 조회해 취소됐는지 본다. 예외를 던지지 않는다.
+     * CANCELED면 취소 성공, DONE이면 아직 취소되지 않음, 그 밖·조회 실패·타임아웃은 결과 불명이다
+     */
+    public TossCancelResult lookupCancel(String paymentKey) {
+        try {
+            return restClient.get()
+                    .uri("/v1/payments/{paymentKey}", paymentKey)
+                    .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                    .exchange((request, response) -> {
+                        if (response.getStatusCode().is2xxSuccessful()) {
+                            TossPayment body = response.bodyTo(TossPayment.class);
+                            String status = body == null ? null : body.status();
+                            if (CANCELED.equals(status)) {
+                                return TossCancelResult.canceled(status, parse(body.lastCanceledAt()));
+                            }
+                            if (DONE.equals(status)) {
+                                return TossCancelResult.notCanceled(status);
+                            }
+                            return TossCancelResult.error(TossCancelOutcome.UNKNOWN, null, "status=" + status);
+                        }
+                        TossError error = readError(response);
+                        return TossCancelResult.error(TossCancelOutcome.UNKNOWN, error == null ? null : error.code(),
+                                error == null ? null : error.message());
+                    });
+        } catch (RestClientException e) {
+            log.warn("토스 취소 확인 조회 실패 cause={}", e.getClass().getSimpleName());
+            return TossCancelResult.error(TossCancelOutcome.UNKNOWN, null, e.getClass().getSimpleName());
+        }
+    }
+
     private String basicAuth() {
         String raw = (secretKey == null ? "" : secretKey) + ":";
         return "Basic " + Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
@@ -103,26 +170,35 @@ public class TossPaymentsClient {
         }
     }
 
-    /** 승인 시각은 표시용이다. 형식이 낯설어도 승인 성공(DONE)을 결과 불명으로 바꾸지 않는다 (null이면 서버 시각을 쓴다) */
-    private static OffsetDateTime parse(String approvedAt) {
-        if (approvedAt == null) {
+    /** 승인·취소 시각은 표시용이다. 형식이 낯설어도 성공을 결과 불명으로 바꾸지 않는다 (null이면 서버 시각을 쓴다) */
+    private static OffsetDateTime parse(String time) {
+        if (time == null) {
             return null;
         }
         try {
-            return OffsetDateTime.parse(approvedAt);
+            return OffsetDateTime.parse(time);
         } catch (DateTimeParseException e) {
-            log.warn("토스 approvedAt 형식을 해석할 수 없다 approvedAt={}", approvedAt);
+            log.warn("토스 시각 형식을 해석할 수 없다 time={}", time);
             return null;
         }
     }
 
-    /** 토스 Payment 객체 중 쓰는 필드만 (orderId = 우리 orderNo) */
+    /** 토스 Payment 객체 중 쓰는 필드만 (orderId = 우리 orderNo, cancels = 취소 내역) */
     record TossPayment(String status, String method, String approvedAt, String orderId, Long totalAmount,
-                       TossReceipt receipt) {
+                       TossReceipt receipt, List<TossCancel> cancels) {
 
         String receiptUrl() {
             return receipt == null ? null : receipt.url();
         }
+
+        /** 마지막 취소 내역의 canceledAt. 없으면 null */
+        String lastCanceledAt() {
+            return cancels == null || cancels.isEmpty() ? null : cancels.get(cancels.size() - 1).canceledAt();
+        }
+    }
+
+    /** 토스 Payment.cancels[] 중 쓰는 필드만 */
+    record TossCancel(Long cancelAmount, String canceledAt, String cancelStatus) {
     }
 
     /** 토스 Payment.receipt {"url": 영수증 페이지} */

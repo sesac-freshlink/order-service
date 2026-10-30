@@ -5,6 +5,7 @@ import com.freshlink.order.common.error.GlobalExceptionHandler;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.domain.payment.Payment;
 import com.freshlink.order.domain.payment.PaymentService;
+import com.freshlink.order.domain.refund.RefundService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,8 @@ class OrderControllerTest {
     SalesService salesService;
     @MockitoBean
     SalesStream salesStream;
+    @MockitoBean
+    RefundService refundService;
 
     private MockHttpServletRequestBuilder valid(String body) {
         return post("/orders").contentType(MediaType.APPLICATION_JSON).content(body)
