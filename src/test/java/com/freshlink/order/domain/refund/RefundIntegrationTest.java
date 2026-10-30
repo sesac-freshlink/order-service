@@ -419,6 +419,71 @@ class RefundIntegrationTest {
         });
     }
 
+    /** 요청 스레드가 토스 결과를 반영하기 전에 멈춘 시도 (주문 환불 REQUESTED, 시도 REQUESTED, 확인 예약 시각) */
+    private long stuckRequest(OffsetDateTime nextSyncAt) {
+        long id = order("PAID", TODAY_END, "REQUESTED");
+        jdbc.update("INSERT INTO refund (order_id, attempt_no, requested_by, requester_id, reason, amount, "
+                        + "toss_idempotency_key, status, requested_at, next_sync_at, created_at, updated_at) "
+                        + "VALUES (?, 1, 'CUSTOMER', ?, 'CHANGE_OF_MIND', 3400, ?, 'REQUESTED', ?, ?, ?, ?)",
+                id, customer, UUID.randomUUID().toString(), NOW.minusMinutes(5).toLocalDateTime(),
+                nextSyncAt.toLocalDateTime(), NOW.minusMinutes(5).toLocalDateTime(), NOW.minusMinutes(5).toLocalDateTime());
+        return id;
+    }
+
+    @Test
+    void 새_시도는_결과를_못_받고_멈출_때를_위해_1분_뒤_확인을_예약해_둔다() throws Exception {
+        long id = paidOrder(TODAY_END);
+        tossCancels(TossCancelResult.error(TossCancelOutcome.DEFINITE_FAILURE, "NOT_CANCELABLE_PAYMENT", "취소 불가"));
+        customerCancel(customer, id, CUSTOMER_BODY).andExpect(status().isOk());
+
+        // 실패로 끝난 시도는 예약이 지워진다. 처리 중이던 동안에는 요청 시각 + 1분으로 예약돼 있었다
+        assertThat(attempts(id)).singleElement().satisfies(r -> assertThat(r.getNextSyncAt()).isNull());
+        Refund fresh = Refund.start(id, 2, CancelRequester.CUSTOMER, customer, CancelReason.CHANGE_OF_MIND, null,
+                3400, UUID.randomUUID().toString(), NOW);
+        assertThat(fresh.getNextSyncAt()).isEqualTo(NOW.plus(Refund.RECOVERY_DELAY));
+    }
+
+    @Test
+    void 처리_중에_멈춘_시도는_예약_시각이_지나면_조회로_확인해_완료와_RETURN() throws Exception {
+        long id = stuckRequest(NOW.minusSeconds(1));
+        when(toss.lookupCancel("pk_" + id)).thenReturn(TossCancelResult.canceled("CANCELED", CANCELED_AT));
+
+        refundAutoSyncService.syncDue();
+
+        Order saved = reload(id);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(saved.getRefundStatus()).isEqualTo(RefundStatus.COMPLETED);
+        assertThat(returnsOf(id)).hasSize(1);
+        // 같은 시도를 다시 취소하지 않는다
+        verify(toss, never()).cancel(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void 처리_중에_멈춘_시도가_아직_취소_안_됐으면_확인_중으로_넘겨_이어서_조회한다() throws Exception {
+        long id = stuckRequest(NOW.minusSeconds(1));
+        when(toss.lookupCancel("pk_" + id)).thenReturn(TossCancelResult.notCanceled("DONE"));
+
+        refundAutoSyncService.syncDue();
+
+        assertThat(reload(id).getRefundStatus()).isEqualTo(RefundStatus.CHECKING);
+        assertThat(attempts(id)).singleElement().satisfies(r -> {
+            assertThat(r.getStatus()).isEqualTo(RefundStatus.CHECKING);
+            assertThat(r.getErrorCode()).isEqualTo("STALE_REQUEST");
+            assertThat(r.getSyncAttempts()).isEqualTo(1);
+            assertThat(r.getNextSyncAt()).isNotNull();
+        });
+    }
+
+    @Test
+    void 예약_시각_전의_처리_중_시도는_요청_스레드에_맡기고_건드리지_않는다() throws Exception {
+        long id = stuckRequest(NOW.plusSeconds(30));
+
+        refundAutoSyncService.syncDue();
+
+        assertThat(reload(id).getRefundStatus()).isEqualTo(RefundStatus.REQUESTED);
+        verify(toss, never()).lookupCancel("pk_" + id);
+    }
+
     // ---------------------------------------------------------------- A3·A6 목록, 매출
 
     @Test

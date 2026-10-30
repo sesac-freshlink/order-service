@@ -24,6 +24,12 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @EntityListeners(AuditingEntityListener.class)
 public class Refund {
 
+    /**
+     * 처리 중(REQUESTED)인 시도를 결과 확인 대상으로 넘기는 시각. 토스 연결 3초 + 응답 15초(TossConfig)보다 넉넉하게 둔다.
+     * 요청 스레드가 토스 결과를 반영하기 전에 파드가 멈춰도 이 시각이 지나면 스케줄러가 조회로 확인한다
+     */
+    public static final Duration RECOVERY_DELAY = Duration.ofMinutes(1);
+
     private static final int ERROR_CODE_MAX = 80;
     private static final int ERROR_MESSAGE_MAX = 500;
 
@@ -90,7 +96,7 @@ public class Refund {
     protected Refund() {
     }
 
-    /** 새 시도. 토스 멱등키는 시도마다 새 UUID다 */
+    /** 새 시도. 토스 멱등키는 시도마다 새 UUID다. 결과를 못 받고 멈춘 경우를 위해 RECOVERY_DELAY 뒤 확인을 예약해 둔다 */
     public static Refund start(Long orderId, int attemptNo, CancelRequester requestedBy, String requesterId,
                                CancelReason reason, String reasonDetail, long amount, String tossIdempotencyKey,
                                OffsetDateTime requestedAt) {
@@ -105,6 +111,7 @@ public class Refund {
         r.tossIdempotencyKey = tossIdempotencyKey;
         r.status = RefundStatus.REQUESTED;
         r.requestedAt = requestedAt;
+        r.nextSyncAt = requestedAt.plus(RECOVERY_DELAY);
         return r;
     }
 

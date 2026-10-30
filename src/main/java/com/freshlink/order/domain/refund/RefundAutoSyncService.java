@@ -10,7 +10,9 @@ import com.freshlink.order.domain.payment.toss.TossPaymentsClient;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -23,7 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 결제 결과 불명(A11)과 같은 원칙·횟수: 곧바로 첫 조회, 이후 30초마다 추가 10번.
  * 결제가 CANCELED면 완료, 한도까지 계속 DONE(취소 안 됨)이면 최종 실패로 확정한다.
  * 조회 실패만 이어지면 실패로 정하지 않고 확인 중으로 남겨 경고 로그(수동 확인 대상)를 남긴다.
- * 같은 시도를 새 멱등키로 다시 취소하지 않는다(재시도는 고객·점주의 재신청으로 새 시도를 만든다)
+ * 같은 시도를 새 멱등키로 다시 취소하지 않는다(재시도는 고객·점주의 재신청으로 새 시도를 만든다).
+ * 처리 중(REQUESTED)인데 예약 시각(Refund.RECOVERY_DELAY)이 지난 시도는 요청 스레드가 결과를 반영하지 못하고 멈춘 것으로 보고
+ * 확인 중(CHECKING)으로 넘겨 같은 조회로 확인한다(파드 재시작·배포 중 멈춘 경우)
  */
 @Service
 public class RefundAutoSyncService {
@@ -33,6 +37,8 @@ public class RefundAutoSyncService {
     /** 첫 조회 1번 + 추가 10번 (A11과 같음) */
     static final int MAX_ATTEMPTS = 11;
     static final Duration INTERVAL = Duration.ofSeconds(30);
+    /** 확인 중, 그리고 결과를 못 받고 멈춘 처리 중 */
+    private static final Set<RefundStatus> SYNC_TARGETS = EnumSet.of(RefundStatus.CHECKING, RefundStatus.REQUESTED);
 
     private final RefundRepository refundRepository;
     private final OrderRepository orderRepository;
@@ -61,7 +67,7 @@ public class RefundAutoSyncService {
             return 0;
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
-        List<Long> refundIds = refundRepository.findSyncDueIds(RefundStatus.CHECKING, now, PageRequest.of(0, BATCH_SIZE));
+        List<Long> refundIds = refundRepository.findSyncDueIds(SYNC_TARGETS, now, PageRequest.of(0, BATCH_SIZE));
         for (Long refundId : refundIds) {
             Long orderId = null;
             TossCancelResult result;
@@ -97,6 +103,11 @@ public class RefundAutoSyncService {
         Refund refund = refundRepository.findById(refundId).orElse(null);
         if (order == null || refund == null) {
             return;
+        }
+        if (refund.getStatus() == RefundStatus.REQUESTED) {
+            // 요청 스레드가 결과를 반영하지 못하고 멈췄다. 확인 중으로 넘기고 아래에서 이번 조회 결과를 반영한다
+            resultWriter.checking(order, refund, "STALE_REQUEST", "취소 요청 결과를 반영하지 못하고 멈춤", now);
+            log.warn("환불 처리 중에 멈춘 시도를 확인 중으로 넘긴다 orderId={} refundId={}", orderId, refundId);
         }
         if (refund.getStatus() != RefundStatus.CHECKING) {
             refund.stopSync();
