@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 주문 상태 (표 orders.status, V1 COMMENT 순서. PICKED_UP·PICKUP_EXPIRED는 V4, CANCELED는 A7).
+ * 주문 상태 (표 orders.status, V1 COMMENT 순서. PICKED_UP·PICKUP_EXPIRED는 V4, REFUNDED는 V8, CANCELED는 A7).
  * 허용되는 상태 전이는 이 enum의 표 한곳에서만 정한다(추가 명세 0.3, MVP 명세 2장).
  * 상태를 바꾸는 코드는 모두 {@link #canChangeTo(OrderStatus)}를 거친다(Order.changeStatus)
  */
@@ -22,6 +22,8 @@ public enum OrderStatus {
     PICKED_UP,
     /** 결제 완료 뒤 픽업 기한이 지남 (A4). 자동 환불·재고 복원은 하지 않는다 */
     PICKUP_EXPIRED,
+    /** 전체 취소·전액 환불 완료 (A9). 재고는 RETURN으로 되돌린다 (A10) */
+    REFUNDED,
     /** 결제 전 고객 직접 취소 (A7). 재고는 RELEASE(CANCELED)로 돌려준다 */
     CANCELED;
 
@@ -34,8 +36,8 @@ public enum OrderStatus {
         ALLOWED.put(PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED, CANCELED));
         // 승인 성공 확인, 확정 실패 확인 (결과 불명이면 그대로 둔다)
         ALLOWED.put(PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED));
-        // 점주 픽업 확인(A5), 픽업 기한 경과(A4)
-        ALLOWED.put(PAID, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
+        // 점주 픽업 확인(A5), 픽업 기한 경과(A4), 전액 환불 성공 확인(A9)
+        ALLOWED.put(PAID, EnumSet.of(PICKED_UP, PICKUP_EXPIRED, REFUNDED));
         // 나머지는 끝난 상태라 어디로도 가지 않는다
         for (OrderStatus status : values()) {
             ALLOWED.putIfAbsent(status, EnumSet.noneOf(OrderStatus.class));

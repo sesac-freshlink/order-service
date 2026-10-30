@@ -4,6 +4,8 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.domain.payment.PaymentRepository;
+import com.freshlink.order.domain.refund.RefundRepository;
+import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -41,7 +43,8 @@ class OrderServiceTest {
     @BeforeEach
     void setUp() {
         TransactionTemplate tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
-        service = new OrderService(orderRepository, mock(PaymentRepository.class), outboxWriter, tx, QUEUE,
+        service = new OrderService(orderRepository, mock(PaymentRepository.class), mock(RefundRepository.class),
+                outboxWriter, tx, QUEUE,
                 Clock.fixed(Instant.parse("2026-10-20T01:00:00Z"), ZoneId.of("Asia/Seoul")));
     }
 
@@ -152,8 +155,9 @@ class OrderServiceTest {
     }
 
     @Test
-    void 점주_목록은_그_점포의_PAID_주문을_결제_최신순으로_찾는다() {
-        when(orderRepository.findByStoreIdAndStatusOrderByPaidAtDescIdDesc(7L, OrderStatus.PAID))
+    void 점주_목록은_그_점포의_PAID_환불_NONE_주문을_결제_최신순으로_찾는다() {
+        when(orderRepository.findByStoreIdAndStatusAndRefundStatusOrderByPaidAtDescIdDesc(7L, OrderStatus.PAID,
+                RefundStatus.NONE))
                 .thenReturn(List.of(saved(2L), saved(1L)));
 
         assertThat(service.listPaidForStore(7L)).extracting(Order::getId).containsExactly(2L, 1L);
