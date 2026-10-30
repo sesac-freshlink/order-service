@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** 실제 MySQL(Testcontainers)에서 주문 생성 전체 흐름을 확인한다. SQS는 목이고 발행기는 1시간 뒤에 돌아 실제 전송이 없다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)

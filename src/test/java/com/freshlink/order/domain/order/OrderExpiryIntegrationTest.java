@@ -30,7 +30,7 @@ import static org.mockito.Mockito.doThrow;
 
 /** 결제 대기 10분 만료를 실제 MySQL에서 확인한다. 스케줄러는 끄고 서비스를 바로 부른다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class OrderExpiryIntegrationTest {

@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** A3 고객 주문 내역·A6 점주 주문 목록 구분을 실제 MySQL에서 확인한다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)

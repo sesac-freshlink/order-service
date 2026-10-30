@@ -24,7 +24,9 @@ public enum OrderErrorCode implements ErrorCode {
     ORDER_NOT_SYNCABLE(409, "결제 확인 대상이 아닙니다"),
     ORDER_NOT_CLOSABLE(409, "종료할 수 없는 주문입니다"),
     ORDER_NOT_PICKABLE(409, "픽업할 수 없는 주문입니다"),
-    PICKUP_DEADLINE_PASSED(409, "픽업 기한이 지난 주문입니다");
+    PICKUP_DEADLINE_PASSED(409, "픽업 기한이 지난 주문입니다"),
+    // N-02 픽업 준비 완료 (API 명세에 아직 없음)
+    ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다");
 
     private final int status;
     private final String message;

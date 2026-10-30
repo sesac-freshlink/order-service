@@ -65,7 +65,19 @@ public class OwnerOrderController {
                 OrderPeriod.of(from, to), OrderPageRequest.of(page, size));
     }
 
-    /** A5 점주 픽업 확인 (기한 이내 결제 완료 주문만) */
+    /** N-02 점주 픽업 준비 완료 (기한 이내 결제 완료 주문만). 고객에게 픽업 준비 완료 알림이 간다 */
+    @PostMapping("/{orderId}/ready")
+    public PickupResponse markReady(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @RequestHeader(name = AuthHeaders.STORE_ID, required = false) String storeIdHeader) {
+        if (!AuthHeaders.hasRole(role, AuthHeaders.ROLE_OWNER)) {
+            throw new BusinessException(OrderErrorCode.FORBIDDEN);
+        }
+        return PickupResponse.from(orderService.markReadyForPickup(parseStoreId(storeIdHeader), orderId));
+    }
+
+    /** A5 점주 픽업 확인 (기한 이내 픽업 준비 완료 주문만) */
     @PostMapping("/{orderId}/pickup")
     public PickupResponse pickUp(
             @PathVariable Long orderId,

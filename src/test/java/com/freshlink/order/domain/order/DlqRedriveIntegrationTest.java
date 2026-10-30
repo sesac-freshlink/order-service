@@ -35,7 +35,7 @@ import static org.mockito.Mockito.reset;
  */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
         "app.queue.commands=test-inventory-commands.fifo",
-        "app.queue.results=test-inventory-results",
+        "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class DlqRedriveIntegrationTest {

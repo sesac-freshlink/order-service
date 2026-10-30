@@ -205,9 +205,17 @@ public class Order {
         return pickupDeadline != null && now.isAfter(pickupDeadline);
     }
 
-    /** A5 점주 픽업 확인: 결제 완료이고 기한 이내일 때만. 되돌리기는 없다 */
-    public void pickUp(OffsetDateTime now) {
+    /** N-02 점주 픽업 준비 완료: 결제 완료이고 기한 이내일 때만. 되돌리기는 없다 */
+    public void markReadyForPickup(OffsetDateTime now) {
         if (status != OrderStatus.PAID || isPickupDeadlinePassed(now)) {
+            throw new IllegalStateException("픽업 준비 완료로 바꿀 수 없다: orderId=" + id + " status=" + status);
+        }
+        changeStatus(OrderStatus.READY_FOR_PICKUP);
+    }
+
+    /** A5 점주 픽업 확인: 픽업 준비 완료이고 기한 이내일 때만. 되돌리기는 없다 */
+    public void pickUp(OffsetDateTime now) {
+        if (status != OrderStatus.READY_FOR_PICKUP || isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업할 수 없다: orderId=" + id + " status=" + status);
         }
         changeStatus(OrderStatus.PICKED_UP);
@@ -215,14 +223,14 @@ public class Order {
     }
 
     /**
-     * A4 픽업 기한 경과 (스케줄러). 결제 완료면 PICKUP_EXPIRED(환불·재고 복원 없음),
+     * A4 픽업 기한 경과 (스케줄러). 결제 완료·픽업 준비 완료면 PICKUP_EXPIRED(환불·재고 복원 없음),
      * 결제 대기면 EXPIRED·사유 PICKUP_DEADLINE (재고는 부르는 쪽이 RELEASE로 돌려준다)
      */
     public void expirePickup(OffsetDateTime now) {
         if (!isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업 기한 전이다: orderId=" + id);
         }
-        if (status == OrderStatus.PAID) {
+        if (status == OrderStatus.PAID || status == OrderStatus.READY_FOR_PICKUP) {
             changeStatus(OrderStatus.PICKUP_EXPIRED);
         } else if (status == OrderStatus.PAYMENT_WAITING) {
             changeStatus(OrderStatus.EXPIRED);

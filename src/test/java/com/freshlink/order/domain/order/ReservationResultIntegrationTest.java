@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** inventory-results 쪽지(RESERVED·RESERVE_FAILED) 반영을 실제 MySQL에서 확인한다. SQS는 목이고 리스너 컨테이너는 켜지 않는다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
         "app.queue.commands=test-inventory-commands.fifo",
-        "app.queue.results=test-inventory-results",
+        "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class ReservationResultIntegrationTest {

@@ -9,6 +9,8 @@ app:
     commands: ${QUEUE_PREFIX}inventory-commands.fifo
     # RESERVED·RESERVE_FAILED를 받는 큐 (표준 큐, DLQ는 인프라가 붙인다)
     results: ${QUEUE_PREFIX}inventory-results
+    # 화면 알림(새 픽업 주문·픽업 준비 완료)을 notification-service로 보내는 큐 (표준 큐, N-02)
+    notifications: ${QUEUE_PREFIX}notification-events
 
   # 토스페이먼츠 결제 승인. 시크릿 키는 TOSS_SECRET_KEY로만 (커밋·출력 금지). 비어 있으면 결제 승인이 500으로 거절된다
   toss:
