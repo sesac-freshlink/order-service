@@ -14,11 +14,12 @@ public enum CustomerOrderTab {
     PICKUP_WAITING(EnumSet.of(OrderStatus.PAID)),
     /** 픽업 완료 */
     PICKED_UP(EnumSet.of(OrderStatus.PICKED_UP)),
-    /** 취소·환불: 지금은 결제 전 만료(결제 시간·픽업 기한)만 */
-    CANCELED(EnumSet.of(OrderStatus.EXPIRED)),
+    /** 취소·환불: 결제 전 만료(결제 시간·픽업 기한)와 결제 전 고객 취소(A7) */
+    CANCELED(EnumSet.of(OrderStatus.EXPIRED, OrderStatus.CANCELED)),
     /** 전체: 위 주문과 진행 중 주문, 결제 뒤 기한 경과(PICKUP_EXPIRED). 이 구분에만 기한 경과가 나온다 */
     ALL(EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING, OrderStatus.PAYMENT_APPROVING,
-            OrderStatus.PAID, OrderStatus.PICKED_UP, OrderStatus.EXPIRED, OrderStatus.PICKUP_EXPIRED));
+            OrderStatus.PAID, OrderStatus.PICKED_UP, OrderStatus.EXPIRED, OrderStatus.PICKUP_EXPIRED,
+            OrderStatus.CANCELED));
 
     private final Set<OrderStatus> statuses;
 

@@ -233,6 +233,20 @@ public class Order {
         this.closedAt = now;
     }
 
+    /**
+     * A7 결제 전 고객 취소: 결제 대기이고 결제 시간·픽업 기한 안일 때만. 승인 중·결과 확인 중에는 못 한다.
+     * 행을 잠근 채(findByIdForUpdate) 부르므로 승인 시작·만료 스케줄러와 동시에 확정되지 않는다.
+     * 재고는 부르는 쪽이 RELEASE(CANCELED)로 돌려준다. 환불금액은 0원이다
+     */
+    public void cancelBeforePayment(OffsetDateTime now) {
+        if (status != OrderStatus.PAYMENT_WAITING || paymentExpiresAt == null || !now.isBefore(paymentExpiresAt)
+                || isPickupDeadlinePassed(now)) {
+            throw new IllegalStateException("결제 전 취소를 할 수 없다: orderId=" + id + " status=" + status);
+        }
+        changeStatus(OrderStatus.CANCELED);
+        this.closedAt = now;
+    }
+
     /** OP-02 재고 확보 결과가 오지 않아 RESERVING에 멈춘 주문을 닫는다. 재고는 RELEASE(EXPIRED)로 돌려준다 */
     public void closeStuck(OffsetDateTime now) {
         requireReserving();

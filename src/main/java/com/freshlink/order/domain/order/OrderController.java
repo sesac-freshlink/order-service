@@ -90,6 +90,20 @@ public class OrderController {
     }
 
     /**
+     * A7 결제 전 취소: 결제 대기 화면의 "주문 취소". 사유는 받지 않고 환불금액은 0원이다.
+     * 승인 중·결과 확인 중이거나 결제가 끝난 주문은 409 (결제 후 취소는 A8)
+     */
+    @PostMapping("/{orderId}/payment/cancel")
+    public OrderResponse cancelBeforePayment(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
+        requireCustomer(userId, role);
+        orderService.cancelBeforePayment(userId, orderId);
+        return orderService.getDetail(userId, orderId);
+    }
+
+    /**
      * 주문 요청 키: 없거나 UUID가 아니면 400 VALIDATION_ERROR.
      * 헤더에 @NotNull·@Pattern을 붙이면 본문 @Valid 오류까지 메서드 검증 예외로 바뀌어 칸 이름이 사라지므로 여기서 직접 본다
      */

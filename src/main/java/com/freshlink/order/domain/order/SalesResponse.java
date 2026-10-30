@@ -10,7 +10,7 @@ public record SalesResponse(String from, String to, String unit, List<Period> pe
 
     /**
      * 한 묶음. netAmount = paidAmount - refundAmount.
-     * 환불(A8·A9)·결제 전 취소(A7)가 생기기 전까지 refundAmount·refundCount·canceledCount는 0이다
+     * canceledCount는 결제 전 고객 취소(A7) 건수다. 환불(A8·A9)이 생기기 전까지 refundAmount·refundCount는 0이다
      */
     public record Period(String period, long paidAmount, long refundAmount, long netAmount,
                          long paidCount, long refundCount, long canceledCount) {
