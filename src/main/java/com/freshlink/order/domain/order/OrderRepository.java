@@ -29,27 +29,27 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                                                                                RefundStatus refundStatus);
 
     /**
-     * A3 고객 주문 내역: 본인 주문 중 그 상태들(PAID는 그 환불 상태들만), 만든 시각 start 이상 end 미만,
+     * A3 고객 주문 내역: 본인 주문 중 그 상태들(픽업 대기 PAID·READY_FOR_PICKUP은 그 환불 상태들만), 만든 시각 start 이상 end 미만,
      * 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5)
      */
     @Query("select o from Order o where o.customerId = :customerId and o.status in :statuses"
-            + " and (o.status <> :paid or o.refundStatus in :paidRefundStatuses)"
+            + " and (o.status not in :awaiting or o.refundStatus in :paidRefundStatuses)"
             + " and o.createdAt >= :start and o.createdAt < :end")
     Page<Order> findForCustomer(@Param("customerId") String customerId,
-                                @Param("statuses") Collection<OrderStatus> statuses, @Param("paid") OrderStatus paid,
+                                @Param("statuses") Collection<OrderStatus> statuses, @Param("awaiting") Collection<OrderStatus> awaiting,
                                 @Param("paidRefundStatuses") Collection<RefundStatus> paidRefundStatuses,
                                 @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end,
                                 Pageable pageable);
 
     /**
-     * A6 점주 주문 목록: 그 점포 주문 중 그 상태들(PAID는 그 환불 상태들만), 만든 시각 start 이상 end 미만,
+     * A6 점주 주문 목록: 그 점포 주문 중 그 상태들(픽업 대기 PAID·READY_FOR_PICKUP은 그 환불 상태들만), 만든 시각 start 이상 end 미만,
      * 정렬·페이지는 pageable (인덱스 idx_orders_store_status_paid 앞부분)
      */
     @Query("select o from Order o where o.storeId = :storeId and o.status in :statuses"
-            + " and (o.status <> :paid or o.refundStatus in :paidRefundStatuses)"
+            + " and (o.status not in :awaiting or o.refundStatus in :paidRefundStatuses)"
             + " and o.createdAt >= :start and o.createdAt < :end")
     Page<Order> findForStore(@Param("storeId") Long storeId,
-                             @Param("statuses") Collection<OrderStatus> statuses, @Param("paid") OrderStatus paid,
+                             @Param("statuses") Collection<OrderStatus> statuses, @Param("awaiting") Collection<OrderStatus> awaiting,
                              @Param("paidRefundStatuses") Collection<RefundStatus> paidRefundStatuses,
                              @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end,
                              Pageable pageable);

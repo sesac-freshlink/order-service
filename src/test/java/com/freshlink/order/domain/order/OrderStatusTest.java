@@ -23,7 +23,7 @@ class OrderStatusTest {
             PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED, CANCELED),
             PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED),
             PAID, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED),
-            READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
+            READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED, REFUNDED));
 
     @Test
     void 명세_표에_있는_전이만_허용한다() {

@@ -85,7 +85,7 @@ public class RefundService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (!order.canStartRefund(now)) {
             // A4 요청 시점 기한 검사: 스케줄러가 아직 PICKUP_EXPIRED로 바꾸지 않았어도 신규 취소는 막는다
-            if (order.getStatus() == OrderStatus.PAID && order.isPickupDeadlinePassed(now)) {
+            if (order.isAwaitingPickup() && order.isPickupDeadlinePassed(now)) {
                 throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
             }
             throw new BusinessException(OrderErrorCode.ORDER_NOT_CANCELABLE);

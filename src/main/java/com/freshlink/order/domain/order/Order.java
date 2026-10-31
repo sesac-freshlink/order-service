@@ -270,18 +270,23 @@ public class Order {
     }
 
     /**
-     * A8 취소 요청이 유효한지. 결제 완료이면서 처음 요청(환불 NONE·기한 이내)이거나 실패한 환불의 재신청(FAILED)이어야 한다.
+     * A8 취소 요청이 유효한지. 픽업 대기(결제 완료·준비 완료)이면서 처음 요청(환불 NONE·기한 이내)이거나 실패한 환불의 재신청(FAILED)이어야 한다.
      * 기한 안에 시작한 환불은 FAILED여도 기한 뒤 재신청을 허용한다 (추가 명세 0.4, A9 픽업·환불 경합)
      */
     public boolean canStartRefund(OffsetDateTime now) {
-        if (status != OrderStatus.PAID) {
+        if (!isAwaitingPickup()) {
             return false;
         }
         return refundStatus == RefundStatus.FAILED
                 || (refundStatus == RefundStatus.NONE && !isPickupDeadlinePassed(now));
     }
 
-    /** A8 취소 요청: 환불 처리 중으로 바꾸고 요청 시각을 남긴다. 주문 상태는 PAID 그대로다 */
+    /** 픽업 대기: 결제 완료와 픽업 준비 완료(N-02). 결제 후 취소(A8)는 둘 다 받는다(10/31 김경우 결정) */
+    public boolean isAwaitingPickup() {
+        return status == OrderStatus.PAID || status == OrderStatus.READY_FOR_PICKUP;
+    }
+
+    /** A8 취소 요청: 환불 처리 중으로 바꾸고 요청 시각을 남긴다. 주문 상태는 그대로다(결제 완료·준비 완료) */
     public void startRefund(OffsetDateTime now) {
         if (!canStartRefund(now)) {
             throw new IllegalStateException("환불을 시작할 수 없다: orderId=" + id + " status=" + status

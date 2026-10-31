@@ -219,7 +219,7 @@ public class OrderService {
                                                                      OrderPeriod period, OrderPageRequest paging) {
         PageRequest pageable = PageRequest.of(paging.page(), paging.size(),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-        return PageResponse.of(orderRepository.findForCustomer(customerId, tab.statuses(), OrderStatus.PAID,
+        return PageResponse.of(orderRepository.findForCustomer(customerId, tab.statuses(), PICKUP_WAITING,
                         tab.paidRefundStatuses(), period.start(), period.end(), pageable),
                 CustomerOrderSummaryResponse::from);
     }
@@ -231,7 +231,7 @@ public class OrderService {
         if (tab.statuses().isEmpty()) {
             return PageResponse.empty(paging.page(), paging.size());
         }
-        Page<Order> page = orderRepository.findForStore(storeId, tab.statuses(), OrderStatus.PAID,
+        Page<Order> page = orderRepository.findForStore(storeId, tab.statuses(), PICKUP_WAITING,
                 tab.paidRefundStatuses(), period.start(), period.end(),
                 PageRequest.of(paging.page(), paging.size(), tab.sort()));
         if (page.isEmpty()) {

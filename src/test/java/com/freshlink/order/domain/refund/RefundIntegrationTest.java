@@ -240,6 +240,45 @@ class RefundIntegrationTest {
     }
 
     @Test
+    void 픽업_준비_완료_주문도_고객_점주_모두_취소해_환불한다() throws Exception {
+        long byCustomer = order("READY_FOR_PICKUP", TODAY_END, "NONE");
+        long byOwner = order("READY_FOR_PICKUP", TODAY_END, "NONE");
+        tossCancels(TossCancelResult.canceled("CANCELED", CANCELED_AT));
+
+        customerCancel(customer, byCustomer, CUSTOMER_BODY).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REFUNDED"));
+        ownerCancel(store, byOwner, OWNER_BODY).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REFUNDED"));
+
+        assertThat(returnsOf(byCustomer)).hasSize(1);
+        assertThat(returnsOf(byOwner)).hasSize(1);
+    }
+
+    @Test
+    void 환불이_시작된_픽업_준비_완료_주문은_픽업할_수_없고_취소_환불_구분에_나온다() throws Exception {
+        long ready = order("READY_FOR_PICKUP", TODAY_END, "NONE");
+        tossCancels(TossCancelResult.error(TossCancelOutcome.DEFINITE_FAILURE, "NOT_CANCELABLE_PAYMENT", "취소 불가"));
+        ownerCancel(store, ready, OWNER_BODY).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY_FOR_PICKUP"))
+                .andExpect(jsonPath("$.refundStatus").value("FAILED"));
+
+        mockMvc.perform(post("/owner/orders/" + ready + "/pickup").header("X-User-Role", "OWNER")
+                        .header("X-Store-Id", String.valueOf(store)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_PICKABLE"));
+        mockMvc.perform(get("/owner/orders").param("tab", "CANCELED")
+                        .header("X-User-Role", "OWNER").header("X-Store-Id", String.valueOf(store)))
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].orderId").value(ready));
+        mockMvc.perform(get("/owner/orders").param("tab", "PICKUP_WAITING")
+                        .header("X-User-Role", "OWNER").header("X-Store-Id", String.valueOf(store)))
+                .andExpect(jsonPath("$.content.length()").value(0));
+        mockMvc.perform(get("/orders").param("tab", "CANCELED")
+                        .header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"))
+                .andExpect(jsonPath("$.content.length()").value(1));
+    }
+
+    @Test
     void 픽업_완료_기한_경과_결제_전_주문은_409_ORDER_NOT_CANCELABLE() throws Exception {
         long picked = order("PICKED_UP", TODAY_END, "NONE");
         long expired = order("PICKUP_EXPIRED", YESTERDAY_END, "NONE");

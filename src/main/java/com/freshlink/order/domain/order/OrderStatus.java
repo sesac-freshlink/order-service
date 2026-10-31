@@ -40,8 +40,8 @@ public enum OrderStatus {
         ALLOWED.put(PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED));
         // 점주 픽업 준비 완료(N-02), 픽업 기한 경과(A4), 전액 환불 성공 확인(A9). 픽업 확인은 준비 완료를 거쳐야 한다(10/30 경우 결정)
         ALLOWED.put(PAID, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED));
-        // 점주 픽업 확인(A5), 픽업 기한 경과(A4)
-        ALLOWED.put(READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
+        // 점주 픽업 확인(A5), 픽업 기한 경과(A4), 전액 환불 성공 확인(A9, 준비 완료도 픽업 대기라 취소를 받는다)
+        ALLOWED.put(READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED, REFUNDED));
         // 나머지는 끝난 상태라 어디로도 가지 않는다
         for (OrderStatus status : values()) {
             ALLOWED.putIfAbsent(status, EnumSet.noneOf(OrderStatus.class));

@@ -7,7 +7,7 @@ import org.springframework.data.domain.Sort;
 
 /**
  * A6 점주 주문 목록 구분 (추가 명세 A6). 구분마다 정렬 기준이 다르다.
- * PAID 주문은 환불 상태로 나눈다: 환불 NONE은 픽업 대기, 환불 처리·확인·실패는 취소·환불
+ * 픽업 대기 주문(PAID·READY_FOR_PICKUP)은 환불 상태로 나눈다: 환불 NONE은 픽업 대기, 환불 처리·확인·실패는 취소·환불
  */
 public enum OwnerOrderTab {
 
@@ -16,7 +16,7 @@ public enum OwnerOrderTab {
     /** 픽업 완료 최신순 */
     PICKED_UP(EnumSet.of(OrderStatus.PICKED_UP), EnumSet.allOf(RefundStatus.class), "pickedUpAt"),
     /** 취소·환불: 환불 처리·확인·실패와 REFUNDED, 취소 요청 최신순 */
-    CANCELED(EnumSet.of(OrderStatus.PAID, OrderStatus.REFUNDED),
+    CANCELED(EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.REFUNDED),
             EnumSet.of(RefundStatus.REQUESTED, RefundStatus.CHECKING, RefundStatus.FAILED), "cancelRequestedAt"),
     /** 기한 경과: 픽업 기한 최신순 */
     PICKUP_EXPIRED(EnumSet.of(OrderStatus.PICKUP_EXPIRED), EnumSet.allOf(RefundStatus.class), "pickupDeadline");
@@ -35,7 +35,7 @@ public enum OwnerOrderTab {
         return statuses;
     }
 
-    /** PAID 주문 중 이 구분에 넣는 환불 상태. PAID가 아닌 주문에는 쓰지 않는다 */
+    /** 픽업 대기(PAID·READY_FOR_PICKUP) 주문 중 이 구분에 넣는 환불 상태. 그 밖의 주문에는 쓰지 않는다 */
     public Set<RefundStatus> paidRefundStatuses() {
         return paidRefundStatuses;
     }
