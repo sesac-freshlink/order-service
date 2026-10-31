@@ -20,6 +20,7 @@ class OrderRefundTest {
         assertThat(paidOrder(NOW.minusSeconds(1)).canStartRefund(NOW)).isFalse();
 
         Order picked = paidOrder(NOW.plusHours(1));
+        picked.markReadyForPickup(NOW);
         picked.pickUp(NOW);
         assertThat(picked.canStartRefund(NOW)).isFalse();
     }

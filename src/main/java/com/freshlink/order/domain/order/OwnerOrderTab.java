@@ -11,8 +11,8 @@ import org.springframework.data.domain.Sort;
  */
 public enum OwnerOrderTab {
 
-    /** 픽업 대기: 결제 완료·환불 NONE, 결제 완료 최신순 (MVP 신규 주문 목록과 같은 주문) */
-    PICKUP_WAITING(EnumSet.of(OrderStatus.PAID), EnumSet.of(RefundStatus.NONE), "paidAt"),
+    /** 픽업 대기: 결제 완료·환불 NONE과 픽업 준비 완료(N-02), 결제 완료 최신순 (MVP 신규 주문 목록과 같은 주문) */
+    PICKUP_WAITING(EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP), EnumSet.of(RefundStatus.NONE), "paidAt"),
     /** 픽업 완료 최신순 */
     PICKED_UP(EnumSet.of(OrderStatus.PICKED_UP), EnumSet.allOf(RefundStatus.class), "pickedUpAt"),
     /** 취소·환불: 환불 처리·확인·실패와 REFUNDED, 취소 요청 최신순 */

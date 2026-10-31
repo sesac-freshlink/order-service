@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** A12 재고 확인 결과 미수신 감지를 실제 MySQL에서 확인한다. 기준 시간은 기본값 5분 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @Import(TestcontainersConfiguration.class)
 class ReservingWatchIntegrationTest {

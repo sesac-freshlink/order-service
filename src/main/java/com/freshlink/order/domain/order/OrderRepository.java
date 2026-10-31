@@ -23,9 +23,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
-    /** 점포의 한 상태·환불 상태 주문을 결제 시각 최신순으로 (인덱스 idx_orders_store_status_paid) */
-    List<Order> findByStoreIdAndStatusAndRefundStatusOrderByPaidAtDescIdDesc(Long storeId, OrderStatus status,
-                                                                             RefundStatus refundStatus);
+    /** 점포의 그 상태들·환불 상태 주문을 결제 시각 최신순으로 (인덱스 idx_orders_store_status_paid) */
+    List<Order> findByStoreIdAndStatusInAndRefundStatusOrderByPaidAtDescIdDesc(Long storeId,
+                                                                               Collection<OrderStatus> statuses,
+                                                                               RefundStatus refundStatus);
 
     /**
      * A3 고객 주문 내역: 본인 주문 중 그 상태들(PAID는 그 환불 상태들만), 만든 시각 start 이상 end 미만,

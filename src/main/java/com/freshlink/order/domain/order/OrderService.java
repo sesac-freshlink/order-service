@@ -4,6 +4,7 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReleaseReason;
 import com.freshlink.common.message.command.ReserveMessage;
+import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.domain.payment.Payment;
@@ -15,9 +16,11 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -36,6 +39,8 @@ public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    /** 픽업 대기: 결제 완료와 픽업 준비 완료 (N-02) */
+    private static final Set<OrderStatus> PICKUP_WAITING = EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP);
 
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
@@ -43,18 +48,21 @@ public class OrderService {
     private final OutboxWriter outboxWriter;
     private final TransactionTemplate transactionTemplate;
     private final String commandsQueue;
+    private final String notificationsQueue;
     private final Clock clock;
 
     public OrderService(OrderRepository orderRepository, PaymentRepository paymentRepository,
                         RefundRepository refundRepository, OutboxWriter outboxWriter,
                         TransactionTemplate transactionTemplate,
-                        @Value("${app.queue.commands}") String commandsQueue, Clock clock) {
+                        @Value("${app.queue.commands}") String commandsQueue,
+                        @Value("${app.queue.notifications}") String notificationsQueue, Clock clock) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
         this.outboxWriter = outboxWriter;
         this.transactionTemplate = transactionTemplate;
         this.commandsQueue = commandsQueue;
+        this.notificationsQueue = notificationsQueue;
         this.clock = clock;
     }
 
@@ -100,19 +108,49 @@ public class OrderService {
     }
 
     /**
-     * OR-04 점주 신규 주문 목록: 그 점포의 PAID·환불 NONE 주문, 결제 완료 시각 최신순 (페이지 없음).
+     * OR-04 점주 신규 주문 목록: 그 점포의 픽업 대기(결제 완료·픽업 준비 완료, 환불 NONE) 주문, 결제 완료 시각 최신순 (페이지 없음).
      * 환불이 시작된 주문은 A6 취소·환불 구분에 나온다
      */
     @Transactional(readOnly = true)
     public List<Order> listPaidForStore(Long storeId) {
-        return orderRepository.findByStoreIdAndStatusAndRefundStatusOrderByPaidAtDescIdDesc(storeId, OrderStatus.PAID,
+        return orderRepository.findByStoreIdAndStatusInAndRefundStatusOrderByPaidAtDescIdDesc(storeId, PICKUP_WAITING,
                 RefundStatus.NONE);
     }
 
     /**
+     * N-02 점주 픽업 준비 완료. 행을 잠근 채 확인해 같은 주문을 두 번 누르거나 기한 스케줄러와 겹쳐도 한 번만 바뀐다.
+     * 없으면 404, 다른 점포면 403, 이미 준비 완료면 그대로 돌려준다(알림도 다시 보내지 않는다),
+     * 결제 완료·환불 NONE이 아니면 409(환불이 시작된 주문은 준비하지 않는다), 기한이 지났으면 409 (스케줄러가 아직 안 돌았어도).
+     * READY_FOR_PICKUP과 고객 픽업 준비 완료 알림(NotificationMessage.pickupReady) Outbox를 한 트랜잭션에 저장한다
+     */
+    @Transactional
+    public Order markReadyForPickup(Long storeId, Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!order.getStoreId().equals(storeId)) {
+            throw new BusinessException(OrderErrorCode.STORE_ORDER_ACCESS_DENIED);
+        }
+        if (order.getStatus() == OrderStatus.READY_FOR_PICKUP) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.PAID || order.getRefundStatus() != RefundStatus.NONE) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_READYABLE);
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (order.isPickupDeadlinePassed(now)) {
+            throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
+        }
+        order.markReadyForPickup(now);
+        outboxWriter.save(notificationsQueue, NotificationMessage.pickupReady(order.getStoreId(), order.getStoreName(),
+                order.getCustomerId(), order.getId(), order.getOrderNo(), order.getProductId(), order.getProductName(),
+                order.getQuantity()));
+        log.info("픽업 준비 완료 orderId={} storeId={}", orderId, storeId);
+        return order;
+    }
+
+    /**
      * A5 점주 픽업 확인. 행을 잠근 채 확인해 같은 주문을 두 번 누르거나 기한 스케줄러·환불 요청과 겹쳐도 한 번만 바뀐다.
-     * 없으면 404, 다른 점포면 403, 결제 완료·환불 NONE이 아니면 409, 기한이 지났으면 409 (스케줄러가 아직 안 돌았어도).
-     * 환불이 먼저 시작됐으면(처리 중·확인 중·실패) 픽업을 거절한다 (추가 명세 A5·A9 픽업·환불 경합)
+     * 없으면 404, 다른 점포면 403, 픽업 준비 완료·환불 NONE이 아니면 409(준비 완료를 먼저 거친다, N-02), 기한이 지났으면 409
      */
     @Transactional
     public Order pickUp(Long storeId, Long orderId) {
@@ -121,7 +159,7 @@ public class OrderService {
         if (!order.getStoreId().equals(storeId)) {
             throw new BusinessException(OrderErrorCode.STORE_ORDER_ACCESS_DENIED);
         }
-        if (order.getStatus() != OrderStatus.PAID || order.getRefundStatus() != RefundStatus.NONE) {
+        if (order.getStatus() != OrderStatus.READY_FOR_PICKUP || order.getRefundStatus() != RefundStatus.NONE) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_PICKABLE);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);

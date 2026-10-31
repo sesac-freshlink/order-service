@@ -27,7 +27,9 @@ public enum OrderErrorCode implements ErrorCode {
     PICKUP_DEADLINE_PASSED(409, "픽업 기한이 지난 주문입니다"),
     // A7 결제 전 취소·A8·A9 결제 후 취소·환불 (API 명세에 아직 없음, 추가 명세 A7~A9)
     ORDER_NOT_CANCELABLE(409, "취소할 수 없는 주문입니다"),
-    REFUND_IN_PROGRESS(409, "취소·환불을 처리하고 있습니다");
+    REFUND_IN_PROGRESS(409, "취소·환불을 처리하고 있습니다"),
+    // N-02 픽업 준비 완료 (API 명세에 아직 없음)
+    ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다");
 
     private final int status;
     private final String message;

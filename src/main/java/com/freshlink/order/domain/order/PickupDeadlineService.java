@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * A4 픽업 기한 경과 (추가 명세 A4). 기한이 지난 결제 완료·환불 NONE 주문은 PICKUP_EXPIRED(쪽지 없음),
+ * A4 픽업 기한 경과 (추가 명세 A4). 기한이 지난 결제 완료·픽업 준비 완료(환불 NONE) 주문은 PICKUP_EXPIRED(쪽지 없음),
  * 결제 대기 주문은 EXPIRED·사유 PICKUP_DEADLINE + RELEASE(EXPIRED).
  * 기한 안에 시작한 환불(처리 중·확인 중·실패)이 있는 주문은 기한이 지나도 바꾸지 않는다(추가 명세 0.4).
  * 주문마다 트랜잭션을 따로 두고, 잠근 뒤 상태·기한을 다시 확인해 픽업 확인·결제 승인·환불 요청과 동시에 확정되지 않게 한다
@@ -28,7 +28,8 @@ public class PickupDeadlineService {
     static final int BATCH_SIZE = 100;
     /** 한 차례에 꺼내 보는 묶음 수 상한 (실패가 많아도 한 차례가 끝없이 길어지지 않게) */
     static final int MAX_PAGES = 10;
-    private static final Set<OrderStatus> TARGETS = Set.of(OrderStatus.PAID, OrderStatus.PAYMENT_WAITING);
+    private static final Set<OrderStatus> TARGETS =
+            Set.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PAYMENT_WAITING);
 
     private final OrderRepository orderRepository;
     private final OutboxWriter outboxWriter;

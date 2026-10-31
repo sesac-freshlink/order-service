@@ -5,6 +5,8 @@ import com.freshlink.common.message.MessageJson;
 import com.freshlink.common.message.command.ConfirmMessage;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReleaseReason;
+import com.freshlink.common.message.notification.NotificationKind;
+import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.message.result.ReservedLot;
 import com.freshlink.common.message.result.ReservedMessage;
 import com.freshlink.order.TestcontainersConfiguration;
@@ -66,7 +68,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** OR-03 결제 승인 전체 흐름을 실제 MySQL에서 확인한다. 토스 클라이언트는 목이라 실제 토스에 접속하지 않는다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
@@ -154,6 +156,7 @@ class PaymentConfirmIntegrationTest {
     private static Long orderIdOf(BaseMessage m) {
         if (m instanceof ConfirmMessage c) return c.orderId();
         if (m instanceof ReleaseMessage r) return r.orderId();
+        if (m instanceof NotificationMessage n) return n.orderId();
         return -1L;
     }
 
@@ -193,6 +196,16 @@ class PaymentConfirmIntegrationTest {
         ConfirmMessage msg = MessageJson.fromJson(confirms.get(0), ConfirmMessage.class);
         assertThat(msg.storeId()).isEqualTo(1L);
         assertThat(outboxPayloads("RELEASE")).isEmpty();
+        // N-02: 같은 트랜잭션에 점주 새 픽업 주문 알림이 하나 남는다
+        List<String> notifications = outboxPayloads("NOTIFICATION");
+        assertThat(notifications).hasSize(1);
+        NotificationMessage newOrder = MessageJson.fromJson(notifications.get(0), NotificationMessage.class);
+        assertThat(newOrder.kind()).isEqualTo(NotificationKind.NEW_ORDER);
+        assertThat(newOrder.storeId()).isEqualTo(1L);
+        assertThat(newOrder.userId()).isNull();
+        assertThat(newOrder.orderNo()).isEqualTo(order.getOrderNo());
+        assertThat(newOrder.productName()).isEqualTo("매운 컵라면 115g");
+        assertThat(newOrder.quantity()).isEqualTo(2);
         // 커밋 뒤 매출 SSE가 그 점포의 오늘 합계를 다시 보낸다
         verify(salesStream).onSalesChanged(new SalesChangedEvent(1L));
     }
@@ -259,7 +272,9 @@ class PaymentConfirmIntegrationTest {
         List<String> releases = outboxPayloads("RELEASE");
         assertThat(releases).hasSize(1);
         assertThat(MessageJson.fromJson(releases.get(0), ReleaseMessage.class).reason()).isEqualTo(ReleaseReason.PAYMENT_FAILED);
-        assertThat(outboxPayloads("CONFIRM")).isEmpty();        verify(salesStream, never()).onSalesChanged(any());
+        assertThat(outboxPayloads("CONFIRM")).isEmpty();
+        assertThat(outboxPayloads("NOTIFICATION")).isEmpty();
+        verify(salesStream, never()).onSalesChanged(any());
     }
 
     @Test

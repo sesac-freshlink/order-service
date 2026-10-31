@@ -10,6 +10,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +45,7 @@ class OrderServiceTest {
     void setUp() {
         TransactionTemplate tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
         service = new OrderService(orderRepository, mock(PaymentRepository.class), mock(RefundRepository.class),
-                outboxWriter, tx, QUEUE,
+                outboxWriter, tx, QUEUE, "test-notification-events",
                 Clock.fixed(Instant.parse("2026-10-20T01:00:00Z"), ZoneId.of("Asia/Seoul")));
     }
 
@@ -155,9 +156,9 @@ class OrderServiceTest {
     }
 
     @Test
-    void 점주_목록은_그_점포의_PAID_환불_NONE_주문을_결제_최신순으로_찾는다() {
-        when(orderRepository.findByStoreIdAndStatusAndRefundStatusOrderByPaidAtDescIdDesc(7L, OrderStatus.PAID,
-                RefundStatus.NONE))
+    void 점주_목록은_그_점포의_픽업_대기_환불_NONE_주문을_결제_최신순으로_찾는다() {
+        when(orderRepository.findByStoreIdAndStatusInAndRefundStatusOrderByPaidAtDescIdDesc(7L,
+                EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP), RefundStatus.NONE))
                 .thenReturn(List.of(saved(2L), saved(1L)));
 
         assertThat(service.listPaidForStore(7L)).extracting(Order::getId).containsExactly(2L, 1L);

@@ -22,7 +22,8 @@ class OrderStatusTest {
             RESERVING, EnumSet.of(PAYMENT_WAITING, OUT_OF_STOCK, EXPIRED),
             PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED, CANCELED),
             PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED),
-            PAID, EnumSet.of(PICKED_UP, PICKUP_EXPIRED, REFUNDED));
+            PAID, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED),
+            READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
 
     @Test
     void 명세_표에_있는_전이만_허용한다() {
@@ -56,6 +57,7 @@ class OrderStatusTest {
     @Test
     void 픽업_완료한_주문은_기한이_지나도_PICKUP_EXPIRED로_가지_않는다() {
         Order order = paidOrder(NOW.plusHours(1));
+        order.markReadyForPickup(NOW);
         order.pickUp(NOW);
 
         assertThatThrownBy(() -> order.expirePickup(NOW.plusHours(2)))
