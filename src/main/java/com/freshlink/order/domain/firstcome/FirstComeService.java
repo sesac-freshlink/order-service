@@ -34,10 +34,12 @@ public class FirstComeService {
     static final int MAX_CACHED_LOOKUPS = 1_000;
     /**
      * 1인 1개: 입장권으로 만든 주문이 이 상태이고 환불이 시작되지 않았으면 다시 줄 서거나 주문할 수 없다.
+     * 픽업 기한이 지난 주문(PICKUP_EXPIRED)도 결제는 끝나 환불 없이 판매된 것이라 센다.
      * 실패·만료·취소·환불(진행 중 포함)된 주문은 세지 않는다. 입장권 없이 산 예전 일반 주문도 세지 않는다
      */
     static final Set<OrderStatus> HOLDING = EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING,
-            OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP);
+            OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP,
+            OrderStatus.PICKUP_EXPIRED);
 
     private final FirstComeQueue queue;
     private final InventoryFirstComeClient inventory;

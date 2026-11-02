@@ -236,6 +236,17 @@ class FirstComeQueueIntegrationTest {
     }
 
     @Test
+    void 픽업_기한이_지난_주문도_결제한_것이라_1인_1개에_센다() throws Exception {
+        remaining(124, 5);
+        String buyer = user();
+        long orderId = buyWithTicket(buyer, 124);
+
+        jdbc.update("UPDATE orders SET status = 'PICKUP_EXPIRED', refund_status = 'NONE' WHERE id = ?", orderId);
+        mockMvc.perform(join(buyer, 124)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FIRST_COME_ALREADY_ORDERED"));
+    }
+
+    @Test
     void 주문을_만든_자리는_RESERVE_반영_전까지_다른_사람에게_주지_않는다() throws Exception {
         remaining(108, 1);
         String buyer = user();
