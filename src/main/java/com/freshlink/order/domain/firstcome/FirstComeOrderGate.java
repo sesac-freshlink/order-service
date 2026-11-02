@@ -74,13 +74,13 @@ public class FirstComeOrderGate {
         return new Admission(key, userId, ticket.get());
     }
 
-    /** 입장권으로 주문을 만들었으면 산 사람 목록에 적는다(1인 1개). Redis 오류는 삼킨다 (그때는 다시 줄 설 수 있다) */
+    /** 입장권으로 주문을 만들었으면 그날(KST) 산 사람 목록에 적는다(1인 1개). Redis 오류는 삼킨다 (그때는 다시 줄 설 수 있다) */
     public void complete(Admission admission, Long orderId) {
         if (admission == null) {
             return;
         }
         try {
-            queue.addBuyer(admission.key(), admission.userId(), orderId);
+            queue.addBuyer(admission.key(), FirstComeService.salesDay(clock.instant()), admission.userId(), orderId);
         } catch (DataAccessException e) {
             log.warn("선착순 산 사람 기록 실패 storeId={} productId={} orderId={}", admission.key().storeId(),
                     admission.key().productId(), orderId);

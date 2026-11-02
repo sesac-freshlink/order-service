@@ -7,6 +7,7 @@ import com.freshlink.order.domain.order.OrderStatus;
 import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.EnumSet;
@@ -33,7 +34,8 @@ public class FirstComeService {
     /** 남은 수량을 파드 메모리에 두는 상품 수 상한. 점포·상품 번호는 요청에서 오므로 끝없이 늘지 않게 막는다 */
     static final int MAX_CACHED_LOOKUPS = 1_000;
     /**
-     * 1인 1개: 입장권으로 만든 주문이 이 상태이고 환불이 시작되지 않았으면 다시 줄 서거나 주문할 수 없다.
+     * 1인 1개(하루, KST): 그날 입장권으로 만든 주문이 이 상태이고 환불이 시작되지 않았으면 그날은 다시 줄 서거나 주문할 수 없다.
+     * 다음 날은 다시 살 수 있다(11/2 결정).
      * 픽업 기한이 지난 주문(PICKUP_EXPIRED)도 결제는 끝나 환불 없이 판매된 것이라 센다.
      * 실패·만료·취소·환불(진행 중 포함)된 주문은 세지 않는다. 입장권 없이 산 예전 일반 주문도 세지 않는다
      */
@@ -130,11 +132,12 @@ public class FirstComeService {
     }
 
     /**
-     * 이 사람이 이번 선착순에서 이미 샀는지. 입장권으로 만든 주문(Redis fc:bought)을 DB에서 다시 읽어,
+     * 이 사람이 오늘(KST) 선착순으로 이미 샀는지. 오늘 입장권으로 만든 주문(Redis fc:bought)을 DB에서 다시 읽어,
      * 실패·취소됐거나 환불이 시작됐으면 목록에서 빼고 false (다시 살 수 있다)
      */
     boolean alreadyOrdered(String userId, QueueKey key) {
-        Long orderId = queue.buyerOrderId(key, userId);
+        LocalDate today = salesDay(clock.instant());
+        Long orderId = queue.buyerOrderId(key, today, userId);
         if (orderId == null) {
             return false;
         }
@@ -142,9 +145,14 @@ public class FirstComeService {
                 .filter(order -> HOLDING.contains(order.getStatus()) && order.getRefundStatus() == RefundStatus.NONE)
                 .isPresent();
         if (!holding) {
-            queue.removeBuyer(key, userId);
+            queue.removeBuyer(key, today, userId);
         }
         return holding;
+    }
+
+    /** 1인 1개를 세는 날 (KST) */
+    static LocalDate salesDay(Instant instant) {
+        return instant.atZone(KST).toLocalDate();
     }
 
     private FirstComeLookup requireFirstCome(QueueKey key) {

@@ -247,6 +247,23 @@ class FirstComeQueueIntegrationTest {
     }
 
     @Test
+    void 하루_기준이라_어제_산_사람은_오늘_다시_살_수_있다() throws Exception {
+        remaining(125, 5);
+        String buyer = user();
+        long orderId = buyWithTicket(buyer, 125);
+        jdbc.update("UPDATE orders SET status = 'PAID', refund_status = 'NONE' WHERE id = ?", orderId);
+        QueueKey key = new QueueKey(STORE, 125L);
+        java.time.LocalDate today = FirstComeService.salesDay(clock.instant());
+        mockMvc.perform(join(buyer, 125)).andExpect(status().isConflict());
+
+        // 같은 주문을 어제 산 것으로 옮긴다
+        queue.removeBuyer(key, today, buyer);
+        queue.addBuyer(key, today.minusDays(1), buyer, orderId);
+        mockMvc.perform(join(buyer, 125)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("WAITING"));
+    }
+
+    @Test
     void 주문을_만든_자리는_RESERVE_반영_전까지_다른_사람에게_주지_않는다() throws Exception {
         remaining(108, 1);
         String buyer = user();
