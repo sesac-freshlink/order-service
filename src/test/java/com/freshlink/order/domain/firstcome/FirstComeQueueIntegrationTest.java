@@ -250,6 +250,18 @@ class FirstComeQueueIntegrationTest {
     }
 
     @Test
+    void 입장_처리가_목록에서_내린_상품도_순번_조회가_다시_올린다() throws Exception {
+        remaining(116, 0);
+        String user = user();
+        mockMvc.perform(join(user, 116));
+        // admit이 "줄이 비었다"고 본 직후 이 사람이 줄을 서서 목록에서만 빠진 상황
+        redis.opsForSet().remove("fc:active", "1:116");
+
+        mockMvc.perform(me(user, 116)).andExpect(jsonPath("$.status").value("SOLD_OUT"));
+        assertThat(queue.activeKeys()).contains("1:116");
+    }
+
+    @Test
     void 선착순이_꺼지면_스케줄러_목록에서_내린다() throws Exception {
         remaining(115, 0);
         mockMvc.perform(join(user(), 115));

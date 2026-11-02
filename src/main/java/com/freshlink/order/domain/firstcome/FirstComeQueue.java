@@ -41,12 +41,16 @@ public class FirstComeQueue {
             redis.opsForZSet().addIfAbsent(queueKey(key), userId, seq == null ? 0 : seq);
         }
         touch(key, userId, now);
-        redis.opsForSet().add(ACTIVE, key.value());
     }
 
-    /** 순번 조회를 기록한다 (줄에 있을 때만 의미가 있다) */
+    /**
+     * 순번 조회를 기록한다 (줄에 있을 때만 의미가 있다). 스케줄러 목록에도 다시 올린다:
+     * admit이 "줄이 비었다"고 본 뒤 목록에서 내리기 직전에 누가 줄을 서면 그 상품이 목록에서 빠질 수 있는데,
+     * 다음 순번 조회(2~3초 뒤)가 다시 올려 줄 선 사람이 남겨지지 않는다 (SADD라 여러 번 해도 같다)
+     */
     public void touch(QueueKey key, String userId, Instant now) {
         redis.opsForZSet().add(seenKey(key), userId, now.toEpochMilli());
+        redis.opsForSet().add(ACTIVE, key.value());
     }
 
     /** 0부터 센 내 자리. 줄에 없으면 null */

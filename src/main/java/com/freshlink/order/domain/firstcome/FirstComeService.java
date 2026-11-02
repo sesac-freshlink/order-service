@@ -30,6 +30,8 @@ public class FirstComeService {
     private static final Logger log = LoggerFactory.getLogger(FirstComeService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     /** 1인 1개: 이 상태의 주문이 있으면 다시 줄 서거나 주문할 수 없다 (실패·만료·취소·환불된 주문은 세지 않는다) */
+    /** 남은 수량을 파드 메모리에 두는 상품 수 상한. 점포·상품 번호는 요청에서 오므로 끝없이 늘지 않게 막는다 */
+    static final int MAX_CACHED_LOOKUPS = 1_000;
     static final Set<OrderStatus> HOLDING = EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING,
             OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP);
 
@@ -86,7 +88,8 @@ public class FirstComeService {
 
     /**
      * 남은 수량 (짧게 파드 메모리에 둔다). 줄 선 사람이 2~3초마다 물어도 inventory에는 상품마다 remainingCacheTtl에 한 번만 간다.
-     * 알 수 없으면(타임아웃) 남겨 두지 않는다
+     * 알 수 없으면(타임아웃) 남겨 두지 않는다. 상품 수가 MAX_CACHED_LOOKUPS를 넘으면 시간이 지난 것부터 지우고,
+     * 그래도 넘으면 모두 비운다 (다음 조회 때 inventory에 다시 묻는다)
      */
     public FirstComeLookup lookup(QueueKey key) {
         Instant now = clock.instant();
@@ -95,10 +98,23 @@ public class FirstComeService {
             return cached.lookup();
         }
         FirstComeLookup fresh = inventory.lookup(key.storeId(), key.productId());
-        if (fresh.kind() != FirstComeLookup.Kind.UNKNOWN) {
-            lookups.put(key, new Cached(fresh, now.plus(properties.remainingCacheTtl())));
+        if (fresh.kind() == FirstComeLookup.Kind.UNKNOWN) {
+            lookups.remove(key);
+            return fresh;
+        }
+        lookups.put(key, new Cached(fresh, now.plus(properties.remainingCacheTtl())));
+        if (lookups.size() > MAX_CACHED_LOOKUPS) {
+            lookups.values().removeIf(entry -> !now.isBefore(entry.until()));
+            if (lookups.size() > MAX_CACHED_LOOKUPS) {
+                lookups.clear();
+            }
         }
         return fresh;
+    }
+
+    /** 테스트용: 지금 파드 메모리에 둔 상품 수 */
+    int cachedLookups() {
+        return lookups.size();
     }
 
     /** 스케줄러가 입장 처리 직전에 부른다. 캐시를 거치지 않고 inventory에 물어 캐시도 새로 채운다 */
