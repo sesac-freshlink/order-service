@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
  *   <li>{@code fc:ticket:k:userId} 입장권 (값 = 만료 epoch ms, TTL 5분)</li>
  *   <li>{@code fc:tickets:k} 살아 있는 입장권 수를 세는 정렬 집합 (점수 = 그 자리가 비는 epoch ms)</li>
  *   <li>{@code fc:active} 스케줄러가 돌 상품 목록 (집합, 값 = k)</li>
+ *   <li>{@code fc:bought:k} 입장권으로 주문한 사람 (해시, userId → orderId, 7일). 1인 1개를 이 목록으로 본다</li>
  * </ul>
  * 입장 처리(admit)는 ShedLock을 잡은 스케줄러 한 곳에서만 부른다
  */
@@ -26,6 +27,11 @@ import org.springframework.stereotype.Component;
 public class FirstComeQueue {
 
     static final String ACTIVE = "fc:active";
+    /**
+     * 입장권으로 산 사람 목록을 두는 기간. dev는 금요일 밤 클러스터와 같이 비워지지만, 계속 켜 두는 환경에서도
+     * 다음 주에 같은 상품을 다시 선착순으로 열면 다시 살 수 있게 한다 (1인 1개는 선착순 판매 한 번 안의 제한)
+     */
+    static final Duration BUYERS_TTL = Duration.ofDays(7);
 
     private final StringRedisTemplate redis;
 
@@ -109,6 +115,23 @@ public class FirstComeQueue {
         redis.opsForZSet().add(ticketsKey(key), userId, expiresAt.toEpochMilli());
     }
 
+    /** 입장권으로 주문을 만든 사람을 적는다 (1인 1개) */
+    public void addBuyer(QueueKey key, String userId, Long orderId) {
+        redis.opsForHash().put(buyersKey(key), userId, String.valueOf(orderId));
+        redis.expire(buyersKey(key), BUYERS_TTL);
+    }
+
+    /** 이 사람이 입장권으로 만든 주문 번호. 없으면 null */
+    public Long buyerOrderId(QueueKey key, String userId) {
+        Object value = redis.opsForHash().get(buyersKey(key), userId);
+        return value == null ? null : Long.valueOf(value.toString());
+    }
+
+    /** 그 주문이 실패·취소·환불되면 목록에서 빼서 다시 살 수 있게 한다 */
+    public void removeBuyer(QueueKey key, String userId) {
+        redis.opsForHash().delete(buyersKey(key), userId);
+    }
+
     public Set<String> activeKeys() {
         Set<String> keys = redis.opsForSet().members(ACTIVE);
         return keys == null ? Set.of() : keys;
@@ -171,6 +194,10 @@ public class FirstComeQueue {
 
     private static String ticketsKey(QueueKey key) {
         return "fc:tickets:" + key.value();
+    }
+
+    private static String buyersKey(QueueKey key) {
+        return "fc:bought:" + key.value();
     }
 
     private static String ticketKey(QueueKey key, String userId) {

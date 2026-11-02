@@ -4,6 +4,7 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
+import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -29,9 +30,12 @@ public class FirstComeService {
 
     private static final Logger log = LoggerFactory.getLogger(FirstComeService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    /** 1인 1개: 이 상태의 주문이 있으면 다시 줄 서거나 주문할 수 없다 (실패·만료·취소·환불된 주문은 세지 않는다) */
     /** 남은 수량을 파드 메모리에 두는 상품 수 상한. 점포·상품 번호는 요청에서 오므로 끝없이 늘지 않게 막는다 */
     static final int MAX_CACHED_LOOKUPS = 1_000;
+    /**
+     * 1인 1개: 입장권으로 만든 주문이 이 상태이고 환불이 시작되지 않았으면 다시 줄 서거나 주문할 수 없다.
+     * 실패·만료·취소·환불(진행 중 포함)된 주문은 세지 않는다. 입장권 없이 산 예전 일반 주문도 세지 않는다
+     */
     static final Set<OrderStatus> HOLDING = EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING,
             OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP);
 
@@ -51,10 +55,10 @@ public class FirstComeService {
         this.clock = clock;
     }
 
-    /** 줄 서기. 선착순이 아니면 404, 이미 주문했으면 409. 이미 서 있거나 입장권이 있으면 그 상태를 그대로 돌려준다 */
+    /** 줄 서기. 선착순이 아니면 404, 입장권으로 이미 주문했으면 409. 이미 서 있거나 입장권이 있으면 그 상태를 그대로 돌려준다 */
     public QueueStatusResponse join(String userId, QueueKey key) {
         FirstComeLookup lookup = requireFirstCome(key);
-        if (alreadyOrdered(userId, key)) {
+        if (redis(() -> alreadyOrdered(userId, key))) {
             throw new BusinessException(OrderErrorCode.FIRST_COME_ALREADY_ORDERED);
         }
         Instant now = clock.instant();
@@ -123,9 +127,22 @@ public class FirstComeService {
         return lookup(key);
     }
 
+    /**
+     * 이 사람이 이번 선착순에서 이미 샀는지. 입장권으로 만든 주문(Redis fc:bought)을 DB에서 다시 읽어,
+     * 실패·취소됐거나 환불이 시작됐으면 목록에서 빼고 false (다시 살 수 있다)
+     */
     boolean alreadyOrdered(String userId, QueueKey key) {
-        return orderRepository.existsByCustomerIdAndStoreIdAndProductIdAndStatusIn(userId, key.storeId(),
-                key.productId(), HOLDING);
+        Long orderId = queue.buyerOrderId(key, userId);
+        if (orderId == null) {
+            return false;
+        }
+        boolean holding = orderRepository.findById(orderId)
+                .filter(order -> HOLDING.contains(order.getStatus()) && order.getRefundStatus() == RefundStatus.NONE)
+                .isPresent();
+        if (!holding) {
+            queue.removeBuyer(key, userId);
+        }
+        return holding;
     }
 
     private FirstComeLookup requireFirstCome(QueueKey key) {

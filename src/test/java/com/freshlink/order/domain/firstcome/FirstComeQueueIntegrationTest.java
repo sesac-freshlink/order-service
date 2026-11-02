@@ -16,6 +16,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -58,6 +59,8 @@ class FirstComeQueueIntegrationTest {
     LockProvider lockProvider;
     @Autowired
     Clock clock;
+    @Autowired
+    JdbcTemplate jdbc;
 
     @MockitoBean
     SqsTemplate sqsTemplate;
@@ -176,6 +179,59 @@ class FirstComeQueueIntegrationTest {
         mockMvc.perform(order(buyer, 107, 1)).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("FIRST_COME_ALREADY_ORDERED"));
         mockMvc.perform(join(buyer, 107)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FIRST_COME_ALREADY_ORDERED"));
+    }
+
+    /** 입장권을 받아 주문을 만들고 주문 번호를 돌려준다 */
+    private long buyWithTicket(String buyer, long productId) throws Exception {
+        mockMvc.perform(join(buyer, productId));
+        scheduler.admitAll();
+        String body = mockMvc.perform(order(buyer, productId, 1)).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return Long.parseLong(body.replaceAll(".*\"orderId\":(\\d+).*", "$1"));
+    }
+
+    @Test
+    void 입장권_없이_산_예전_일반_주문은_1인_1개에_세지_않는다() throws Exception {
+        String buyer = user();
+        when(inventory.lookup(STORE, 120L)).thenReturn(FirstComeLookup.notFirstCome());
+        mockMvc.perform(order(buyer, 120, 1)).andExpect(status().isCreated());
+
+        remaining(120, 5);
+        mockMvc.perform(join(buyer, 120)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("WAITING"));
+    }
+
+    @Test
+    void 입장권_주문이_결제_전_취소되면_다시_줄_설_수_있다() throws Exception {
+        remaining(121, 5);
+        String buyer = user();
+        long orderId = buyWithTicket(buyer, 121);
+        mockMvc.perform(join(buyer, 121)).andExpect(status().isConflict());
+
+        jdbc.update("UPDATE orders SET status = 'CANCELED' WHERE id = ?", orderId);
+        mockMvc.perform(join(buyer, 121)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("WAITING"));
+    }
+
+    @Test
+    void 결제_후_취소로_환불이_시작된_주문은_1인_1개에_세지_않는다() throws Exception {
+        remaining(122, 5);
+        String buyer = user();
+        long orderId = buyWithTicket(buyer, 122);
+
+        jdbc.update("UPDATE orders SET status = 'PAID', refund_status = 'CHECKING' WHERE id = ?", orderId);
+        mockMvc.perform(join(buyer, 122)).andExpect(status().isOk());
+    }
+
+    @Test
+    void 결제_완료_주문은_1인_1개에_센다() throws Exception {
+        remaining(123, 5);
+        String buyer = user();
+        long orderId = buyWithTicket(buyer, 123);
+
+        jdbc.update("UPDATE orders SET status = 'PAID', refund_status = 'NONE' WHERE id = ?", orderId);
+        mockMvc.perform(join(buyer, 123)).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("FIRST_COME_ALREADY_ORDERED"));
     }
 
