@@ -3,6 +3,7 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.common.web.AuthHeaders;
+import com.freshlink.order.domain.firstcome.FirstComeOrderGate;
 import com.freshlink.order.domain.payment.PaymentConfirmRequest;
 import com.freshlink.order.domain.payment.PaymentConfirmResponse;
 import com.freshlink.order.domain.payment.PaymentService;
@@ -34,14 +35,20 @@ public class OrderController {
     private final OrderService orderService;
     private final PaymentService paymentService;
     private final RefundService refundService;
+    private final FirstComeOrderGate firstComeOrderGate;
 
-    public OrderController(OrderService orderService, PaymentService paymentService, RefundService refundService) {
+    public OrderController(OrderService orderService, PaymentService paymentService, RefundService refundService,
+                           FirstComeOrderGate firstComeOrderGate) {
         this.orderService = orderService;
         this.paymentService = paymentService;
         this.refundService = refundService;
+        this.firstComeOrderGate = firstComeOrderGate;
     }
 
-    /** OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200 */
+    /**
+     * OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200.
+     * 선착순 상품이면 입장권이 있어야 하고 1개만 살 수 있다(FirstComeOrderGate). 주문을 만들지 못하면 입장권을 되돌린다
+     */
     @PostMapping
     public ResponseEntity<CreateOrderResponse> create(
             @RequestHeader(name = AuthHeaders.IDEMPOTENCY_KEY, required = false) String idempotencyKey,
@@ -50,7 +57,15 @@ public class OrderController {
             @Valid @RequestBody CreateOrderRequest request) {
         requireIdempotencyKey(idempotencyKey);
         requireCustomer(userId, role);
-        CreateOrderResult result = orderService.create(userId, idempotencyKey.toLowerCase(Locale.ROOT), request);
+        String key = idempotencyKey.toLowerCase(Locale.ROOT);
+        FirstComeOrderGate.Admission admission = firstComeOrderGate.admit(userId, key, request);
+        CreateOrderResult result;
+        try {
+            result = orderService.create(userId, key, request);
+        } catch (RuntimeException e) {
+            firstComeOrderGate.release(admission);
+            throw e;
+        }
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(CreateOrderResponse.from(result.order()));
     }

@@ -19,6 +19,13 @@ app:
     connect-timeout: 3s
     read-timeout: 15s
 
+  # 선착순 대기열 (오픈런 문서 2장, 11/2 이태우님과 정한 값). inventory 남은 수량은 클러스터 안에서 부른다(gateway로 안 열림)
+  first-come:
+    inventory-base-url: ${INVENTORY_URL:http://inventory-service:8080}
+    ticket-ttl: 5m                # 입장권 시간
+    idle-timeout: 30s             # 순번 조회가 이만큼 끊기면 줄에서 뺀다
+    admit-interval-ms: 2000       # 입장 처리 주기 (ShedLock order-first-come)
+
 freshlink:
   messaging:
     enabled: true                 # common Outbox 발행기·멱등 처리 켜기 (inventory·order만)
@@ -42,6 +49,15 @@ spring:
           default_storage: NORMALIZE   # OffsetDateTime을 jdbc.time_zone(KST) 벽시계로 저장
   jackson:
     time-zone: Asia/Seoul         # 시각은 ISO-8601 +09:00
+  data:
+    redis:
+      # 선착순 대기열 ElastiCache(Valkey). 주소는 Secrets Manager freshlink-<env>/order/redis → REDIS_HOST·REDIS_PORT (gitops #13). 전송 암호화(TLS) 켬
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      ssl:
+        enabled: ${REDIS_SSL:true}
+      timeout: 2s
+      connect-timeout: 2s
   cloud:
     aws:
       region:
@@ -59,6 +75,9 @@ management:
     health:
       probes:
         enabled: true             # /actuator/health/liveness, /readiness
+  health:
+    redis:
+      enabled: false              # Redis(선착순 대기열)가 안 돼도 주문·결제는 계속 받는다. 대기열 API만 503
   # 추적(할 일 16). 요청마다 traceId를 만들어 로그에 넣고, 다른 서비스를 부를 때 traceparent 헤더를 붙인다.
   # PC에는 Zipkin이 없어서 보내지 않는다. 클러스터에서는 gitops 차트(spring-service)가 환경 변수로 켜고 주소를 넣는다:
   #   MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENABLED=true, MANAGEMENT_TRACING_EXPORT_ZIPKIN_ENDPOINT=http://zipkin.observability:9411/api/v2/spans

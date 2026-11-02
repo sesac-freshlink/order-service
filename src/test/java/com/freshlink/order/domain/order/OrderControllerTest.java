@@ -3,6 +3,7 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.GlobalExceptionHandler;
 import com.freshlink.order.common.error.OrderErrorCode;
+import com.freshlink.order.domain.firstcome.FirstComeOrderGate;
 import com.freshlink.order.domain.payment.Payment;
 import com.freshlink.order.domain.payment.PaymentService;
 import com.freshlink.order.domain.refund.RefundService;
@@ -54,6 +55,8 @@ class OrderControllerTest {
     SalesStream salesStream;
     @MockitoBean
     RefundService refundService;
+    @MockitoBean
+    FirstComeOrderGate firstComeOrderGate;
 
     private MockHttpServletRequestBuilder valid(String body) {
         return post("/orders").contentType(MediaType.APPLICATION_JSON).content(body)
