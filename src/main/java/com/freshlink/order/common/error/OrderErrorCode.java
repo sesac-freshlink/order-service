@@ -29,7 +29,13 @@ public enum OrderErrorCode implements ErrorCode {
     ORDER_NOT_CANCELABLE(409, "취소할 수 없는 주문입니다"),
     REFUND_IN_PROGRESS(409, "취소·환불을 처리하고 있습니다"),
     // N-02 픽업 준비 완료 (API 명세에 아직 없음)
-    ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다");
+    ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다"),
+    // 선착순 대기열 (API 명세에 아직 없음, 오픈런 문서 2장)
+    FIRST_COME_QUANTITY_LIMIT(400, "선착순 상품은 1개만 주문할 수 있습니다"),
+    NOT_FIRST_COME(404, "선착순 상품이 아닙니다"),
+    FIRST_COME_TICKET_REQUIRED(409, "차례가 오면 주문할 수 있습니다. 대기 화면에서 순서를 기다려 주세요"),
+    FIRST_COME_ALREADY_ORDERED(409, "이미 주문한 선착순 상품입니다"),
+    FIRST_COME_UNAVAILABLE(503, "선착순 대기열을 지금 쓸 수 없습니다. 잠시 후 다시 시도해 주세요");
 
     private final int status;
     private final String message;

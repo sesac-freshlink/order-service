@@ -18,6 +18,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** (customer_id, request_id)는 유니크 키라 최대 1건이다 */
     Optional<Order> findByCustomerIdAndRequestId(String customerId, String requestId);
 
+    /** 선착순 1인 1개: 이 고객이 그 점포·상품을 진행 중이거나 결제한 주문이 있는지 */
+    boolean existsByCustomerIdAndStoreIdAndProductIdAndStatusIn(String customerId, Long storeId, Long productId,
+                                                                 Collection<OrderStatus> statuses);
+
     /** 상태를 바꾸기 전에 행을 잠근다 (SELECT … FOR UPDATE). 같은 주문을 동시에 바꾸는 쪽지·스케줄러·결제가 차례로 처리된다 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Order o where o.id = :id")
