@@ -66,6 +66,7 @@ public class OrderController {
             firstComeOrderGate.release(admission);
             throw e;
         }
+        firstComeOrderGate.complete(admission, result.order().getId());
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(CreateOrderResponse.from(result.order()));
     }

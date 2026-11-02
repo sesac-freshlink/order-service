@@ -13,7 +13,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 /**
- * 주문 생성(OR-01) 앞의 선착순 검사. 선착순 상품이면 수량 1개, 같은 상품 주문이 없을 것, 입장권이 있을 것.
+ * 주문 생성(OR-01) 앞의 선착순 검사. 선착순 상품이면 수량 1개, 입장권으로 산 같은 상품 주문이 없을 것, 입장권이 있을 것.
  * 입장권은 주문을 만들기 직전에 쓰고(GETDEL), 주문을 만들지 못하면 되돌린다.
  * <ul>
  *   <li>같은 Idempotency-Key 재요청은 검사하지 않는다 (이미 만든 주문을 그대로 돌려준다)</li>
@@ -56,11 +56,11 @@ public class FirstComeOrderGate {
         if (request.quantity() != 1) {
             throw new BusinessException(OrderErrorCode.FIRST_COME_QUANTITY_LIMIT);
         }
-        if (firstComeService.alreadyOrdered(userId, key)) {
-            throw new BusinessException(OrderErrorCode.FIRST_COME_ALREADY_ORDERED);
-        }
         Optional<Instant> ticket;
         try {
+            if (firstComeService.alreadyOrdered(userId, key)) {
+                throw new BusinessException(OrderErrorCode.FIRST_COME_ALREADY_ORDERED);
+            }
             ticket = queue.takeTicket(key, userId, clock.instant(), properties.reserveGrace());
         } catch (DataAccessException e) {
             log.warn("선착순 입장권 확인 실패 storeId={} productId={} cause={}", key.storeId(), key.productId(),
@@ -72,6 +72,19 @@ public class FirstComeOrderGate {
         }
         log.info("선착순 입장권으로 주문 storeId={} productId={}", key.storeId(), key.productId());
         return new Admission(key, userId, ticket.get());
+    }
+
+    /** 입장권으로 주문을 만들었으면 그날(KST) 산 사람 목록에 적는다(1인 1개). Redis 오류는 삼킨다 (그때는 다시 줄 설 수 있다) */
+    public void complete(Admission admission, Long orderId) {
+        if (admission == null) {
+            return;
+        }
+        try {
+            queue.addBuyer(admission.key(), FirstComeService.salesDay(clock.instant()), admission.userId(), orderId);
+        } catch (DataAccessException e) {
+            log.warn("선착순 산 사람 기록 실패 storeId={} productId={} orderId={}", admission.key().storeId(),
+                    admission.key().productId(), orderId);
+        }
     }
 
     /** 주문을 만들지 못했으면 입장권을 남은 시간만큼 되돌린다. Redis 오류는 삼킨다 (입장권은 원래 시간에 끝난다) */
