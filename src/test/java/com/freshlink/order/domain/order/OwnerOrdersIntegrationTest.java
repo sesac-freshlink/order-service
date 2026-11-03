@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** OR-04 점주 신규 주문 목록을 실제 MySQL에서 확인한다. 점포는 테스트마다 새 번호를 써서 다른 테스트 데이터와 섞이지 않게 한다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
@@ -65,6 +65,35 @@ class OwnerOrdersIntegrationTest {
                 .andExpect(jsonPath("$[0].paidAt").value("2026-10-20T15:35:10+09:00"))
                 .andExpect(jsonPath("$[0].amount").value(3400))
                 .andExpect(jsonPath("$[1].orderId").value(older));
+    }
+
+    @Test
+    void 목록의_각_주문에_결제_내역이_붙는다() throws Exception {
+        long store = storeId();
+        long withReceipt = order(store, "PAID", "2026-10-20 15:35:10", 3400L);
+        long withoutReceipt = order(store, "PAID", "2026-10-20 15:00:00", 3400L);
+        payment(withReceipt, "https://receipt.test/1");
+        payment(withoutReceipt, null);
+
+        mockMvc.perform(get("/owner/orders").header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Role", "OWNER").header("X-Store-Id", String.valueOf(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].orderId").value(withReceipt))
+                .andExpect(jsonPath("$[0].payment.method").value("카드"))
+                .andExpect(jsonPath("$[0].payment.approvedAt").value("2026-10-20T15:35:10+09:00"))
+                .andExpect(jsonPath("$[0].payment.status").value("DONE"))
+                .andExpect(jsonPath("$[0].payment.receiptUrl").value("https://receipt.test/1"))
+                .andExpect(jsonPath("$[1].orderId").value(withoutReceipt))
+                .andExpect(jsonPath("$[1].payment.status").value("DONE"))
+                .andExpect(jsonPath("$[1].payment.receiptUrl").isEmpty());
+    }
+
+    /** OR-03이 남기는 승인 완료 결제 기록을 SQL로 넣는다. 승인 시각은 결제 완료 시각과 같다 */
+    private void payment(long orderId, String receiptUrl) {
+        jdbc.update("INSERT INTO payment (order_id, payment_key, toss_idempotency_key, amount, status, toss_status, "
+                        + "method, approved_at, receipt_url, created_at, updated_at) "
+                        + "SELECT id, ?, ?, amount, 'DONE', 'DONE', '카드', paid_at, ?, NOW(6), NOW(6) FROM orders WHERE id = ?",
+                "pk_" + orderId, UUID.randomUUID().toString(), receiptUrl, orderId);
     }
 
     @Test

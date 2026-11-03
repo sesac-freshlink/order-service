@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** OR-02 주문 조회를 실제 MySQL에서 확인한다. 저장한 시각을 다시 읽어도 +09:00으로 나가는지 본다 */
 @SpringBootTest(properties = {"freshlink.messaging.outbox.publish-interval=1h",
-        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+        "app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
         "spring.cloud.aws.sqs.listener.auto-startup=false", "app.expiry.enabled=false"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)

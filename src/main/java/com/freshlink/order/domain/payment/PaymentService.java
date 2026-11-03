@@ -102,6 +102,10 @@ public class PaymentService {
         if (!now.isBefore(order.getPaymentExpiresAt())) {
             throw new BusinessException(OrderErrorCode.ORDER_EXPIRED);
         }
+        // A4: 결제 시간이 남아도 픽업 기한이 지났으면 결제를 막는다 (스케줄러가 늦게 돌아도)
+        if (order.isPickupDeadlinePassed(now)) {
+            throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
+        }
         if (!toss.isConfigured()) {
             // 부르기 전에 알 수 있는 설정 오류다. 주문을 승인 중에 묶어 두지 않고 그대로 둔다
             throw new IllegalStateException("TOSS_SECRET_KEY가 설정되지 않아 결제 승인을 시작하지 않는다: orderId=" + orderId);
@@ -140,7 +144,7 @@ public class PaymentService {
         switch (result.outcome()) {
             case APPROVED -> {
                 OffsetDateTime paidAt = result.approvedAt() != null ? result.approvedAt() : now;
-                resultWriter.paid(order, payment, result.tossStatus(), result.method(), paidAt);
+                resultWriter.paid(order, payment, result.tossStatus(), result.method(), result.receiptUrl(), paidAt);
                 log.info("결제 완료 orderId={} amount={}", orderId, order.getAmount());
             }
             case DEFINITE_FAILURE -> {
@@ -154,7 +158,9 @@ public class PaymentService {
             }
             default -> {
                 payment.recordError(result.errorCode(), result.errorMessage());
-                log.warn("결제 결과 불명. 승인 중으로 둔다 (OP-01로 확인) orderId={} outcome={} code={} message={}",
+                // A11: 곧바로 첫 자동 조회, 이후 30초마다 (PaymentAutoSyncService)
+                payment.scheduleSync(now);
+                log.warn("결제 결과 불명. 승인 중으로 두고 자동 조회한다 orderId={} outcome={} code={} message={}",
                         orderId, result.outcome(), result.errorCode(), result.errorMessage());
             }
         }

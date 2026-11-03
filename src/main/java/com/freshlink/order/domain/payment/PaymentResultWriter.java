@@ -3,10 +3,13 @@ package com.freshlink.order.domain.payment;
 import com.freshlink.common.message.command.ConfirmMessage;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReleaseReason;
+import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.domain.order.Order;
+import com.freshlink.order.domain.order.SalesChangedEvent;
 import java.time.OffsetDateTime;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,17 +21,30 @@ public class PaymentResultWriter {
 
     private final OutboxWriter outboxWriter;
     private final String commandsQueue;
+    private final String notificationsQueue;
+    private final ApplicationEventPublisher events;
 
-    public PaymentResultWriter(OutboxWriter outboxWriter, @Value("${app.queue.commands}") String commandsQueue) {
+    public PaymentResultWriter(OutboxWriter outboxWriter, @Value("${app.queue.commands}") String commandsQueue,
+                               @Value("${app.queue.notifications}") String notificationsQueue,
+                               ApplicationEventPublisher events) {
         this.outboxWriter = outboxWriter;
         this.commandsQueue = commandsQueue;
+        this.notificationsQueue = notificationsQueue;
+        this.events = events;
     }
 
-    /** PAID + CONFIRM */
-    public void paid(Order order, Payment payment, String tossStatus, String method, OffsetDateTime paidAt) {
+    /**
+     * PAID + CONFIRM + 점주 새 픽업 주문 알림(N-02, NotificationMessage.newOrder)을 한 트랜잭션에 저장한다.
+     * 커밋 뒤 매출 SSE가 그 점포 점주 화면에 오늘 합계를 보낸다
+     */
+    public void paid(Order order, Payment payment, String tossStatus, String method, String receiptUrl,
+                     OffsetDateTime paidAt) {
         order.markPaid(paidAt);
-        payment.approve(tossStatus, method, paidAt);
+        payment.approve(tossStatus, method, paidAt, receiptUrl);
         outboxWriter.save(commandsQueue, ConfirmMessage.of(order.getId(), order.getStoreId()));
+        outboxWriter.save(notificationsQueue, NotificationMessage.newOrder(order.getStoreId(), order.getId(),
+                order.getOrderNo(), order.getProductId(), order.getProductName(), order.getQuantity()));
+        events.publishEvent(new SalesChangedEvent(order.getStoreId()));
     }
 
     /** PAYMENT_FAILED + RELEASE(PAYMENT_FAILED) */

@@ -3,7 +3,10 @@ package com.freshlink.order.domain.order;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.GlobalExceptionHandler;
 import com.freshlink.order.common.error.OrderErrorCode;
+import com.freshlink.order.domain.firstcome.FirstComeOrderGate;
+import com.freshlink.order.domain.payment.Payment;
 import com.freshlink.order.domain.payment.PaymentService;
+import com.freshlink.order.domain.refund.RefundService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,7 +28,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest({OrderController.class, OwnerOrderController.class})
@@ -43,6 +49,14 @@ class OrderControllerTest {
     OrderService orderService;
     @MockitoBean
     PaymentService paymentService;
+    @MockitoBean
+    SalesService salesService;
+    @MockitoBean
+    SalesStream salesStream;
+    @MockitoBean
+    RefundService refundService;
+    @MockitoBean
+    FirstComeOrderGate firstComeOrderGate;
 
     private MockHttpServletRequestBuilder valid(String body) {
         return post("/orders").contentType(MediaType.APPLICATION_JSON).content(body)
@@ -190,12 +204,13 @@ class OrderControllerTest {
     }
 
     @Test
-    void 주문_조회는_200과_14개_필드를_돌려주고_시각은_KST다() throws Exception {
+    void 주문_조회는_200과_18개_필드를_돌려주고_시각은_KST다() throws Exception {
         Order o = order(123L);
         // DB에서 UTC로 읽혀도 응답은 +09:00이어야 한다
         ReflectionTestUtils.setField(o, "createdAt", OffsetDateTime.parse("2026-10-20T06:31:55Z"));
         o.reserve("매운 컵라면 115g", 1700L, OffsetDateTime.parse("2026-10-20T06:32:00Z"));
-        when(orderService.get(USER, 123L)).thenReturn(o);
+        when(orderService.getDetail(USER, 123L))
+                .thenReturn(OrderResponse.from(o, null, OffsetDateTime.parse("2026-10-20T06:35:00Z")));
 
         mockMvc.perform(getOrder("123", USER, "CUSTOMER"))
                 .andExpect(status().isOk())
@@ -212,12 +227,14 @@ class OrderControllerTest {
                 .andExpect(jsonPath("$.amount").value(3400))
                 .andExpect(jsonPath("$.paymentExpiresAt").value("2026-10-20T15:42:00+09:00"))
                 .andExpect(jsonPath("$.paidAt").isEmpty())
-                .andExpect(jsonPath("$.createdAt").value("2026-10-20T15:31:55+09:00"));
+                .andExpect(jsonPath("$.createdAt").value("2026-10-20T15:31:55+09:00"))
+                .andExpect(jsonPath("$.payment").isEmpty())
+                .andExpect(jsonPath("$.serverTime").value("2026-10-20T15:35:00+09:00"));
     }
 
     @Test
     void 예약_중인_주문은_상품명_단가_금액_마감이_null() throws Exception {
-        when(orderService.get(USER, 123L)).thenReturn(order(123L));
+        when(orderService.getDetail(USER, 123L)).thenReturn(response(order(123L)));
 
         mockMvc.perform(getOrder("123", USER, "CUSTOMER"))
                 .andExpect(status().isOk())
@@ -242,8 +259,8 @@ class OrderControllerTest {
 
     @Test
     void 없는_주문은_404_남의_주문은_403_ORDER_ACCESS_DENIED() throws Exception {
-        when(orderService.get(USER, 1L)).thenThrow(new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        when(orderService.get(USER, 2L)).thenThrow(new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED));
+        when(orderService.getDetail(USER, 1L)).thenThrow(new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        when(orderService.getDetail(USER, 2L)).thenThrow(new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED));
 
         mockMvc.perform(getOrder("1", USER, "CUSTOMER"))
                 .andExpect(status().isNotFound())
@@ -277,19 +294,32 @@ class OrderControllerTest {
         return o;
     }
 
+    private OrderResponse response(Order o) {
+        return OrderResponse.from(o, null, OffsetDateTime.parse("2026-10-20T06:35:00Z"));
+    }
+
     @Test
-    void 점주_목록은_200과_6개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
-        when(orderService.listPaidForStore(7L)).thenReturn(List.of(paid(123L, "2026-10-20T06:35:10Z")));
+    void 점주_목록은_200과_10개_필드를_돌려주고_결제_시각은_KST다() throws Exception {
+        Payment payment = Payment.start(123L, "pk_1", "33333333-3333-3333-3333-333333333333", 3400L);
+        payment.approve("DONE", "카드", OffsetDateTime.parse("2026-10-20T06:35:10Z"), "https://receipt.test/1");
+        when(orderService.listPaidForStoreWithPayment(7L))
+                .thenReturn(List.of(OwnerOrderResponse.from(paid(123L, "2026-10-20T06:35:10Z"), payment)));
 
         mockMvc.perform(ownerOrders("OWNER", "7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].orderId").value(123))
                 .andExpect(jsonPath("$[0].orderNo").value("FL-20261020-000123"))
+                .andExpect(jsonPath("$[0].status").value("PAID"))
+                .andExpect(jsonPath("$[0].pickedUpAt").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$[0].productName").value("매운 컵라면 115g"))
                 .andExpect(jsonPath("$[0].quantity").value(2))
                 .andExpect(jsonPath("$[0].amount").value(3400))
                 .andExpect(jsonPath("$[0].paidAt").value("2026-10-20T15:35:10+09:00"))
+                .andExpect(jsonPath("$[0].payment.method").value("카드"))
+                .andExpect(jsonPath("$[0].payment.approvedAt").value("2026-10-20T15:35:10+09:00"))
+                .andExpect(jsonPath("$[0].payment.status").value("DONE"))
+                .andExpect(jsonPath("$[0].payment.receiptUrl").value("https://receipt.test/1"))
                 .andExpect(jsonPath("$[0].customerId").doesNotExist());
     }
 
@@ -316,11 +346,36 @@ class OrderControllerTest {
 
     @Test
     void 그룹이_여럿이면_쉼표로_오고_그중_하나만_맞으면_된다() throws Exception {
-        when(orderService.listPaidForStore(7L)).thenReturn(List.of());
-        when(orderService.get(USER, 123L)).thenReturn(order(123L));
+        when(orderService.listPaidForStoreWithPayment(7L)).thenReturn(List.of());
+        when(orderService.getDetail(USER, 123L)).thenReturn(response(order(123L)));
 
         mockMvc.perform(ownerOrders("CUSTOMER, OWNER", "7")).andExpect(status().isOk());
         mockMvc.perform(getOrder("123", USER, "OWNER,CUSTOMER")).andExpect(status().isOk());
         mockMvc.perform(getOrder("123", USER, "OWNERX,ADMIN")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 매출_SSE는_점주의_X_Store_Id로_연결한다() throws Exception {
+        when(salesStream.subscribe(7L)).thenReturn(new SseEmitter());
+
+        mockMvc.perform(get("/owner/orders/sales/stream").accept(MediaType.TEXT_EVENT_STREAM)
+                        .header("X-User-Id", USER).header("X-User-Role", "OWNER").header("X-Store-Id", "7"))
+                .andExpect(request().asyncStarted());
+
+        verify(salesStream).subscribe(7L);
+    }
+
+    @Test
+    void 매출_SSE는_점주가_아니거나_점포가_없으면_본문_없이_403() throws Exception {
+        mockMvc.perform(get("/owner/orders/sales/stream").accept(MediaType.TEXT_EVENT_STREAM)
+                        .header("X-User-Id", USER).header("X-User-Role", "CUSTOMER").header("X-Store-Id", "7"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(""));
+        mockMvc.perform(get("/owner/orders/sales/stream").accept(MediaType.TEXT_EVENT_STREAM)
+                        .header("X-User-Id", USER).header("X-User-Role", "OWNER").header("X-Store-Id", "abc"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(""));
+
+        verifyNoInteractions(salesStream);
     }
 }

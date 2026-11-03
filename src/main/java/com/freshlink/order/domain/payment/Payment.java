@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -23,6 +24,7 @@ public class Payment {
     private static final int ERROR_CODE_MAX = 80;
     private static final int ERROR_MESSAGE_MAX = 500;
     private static final int SHORT_MAX = 30;
+    private static final int RECEIPT_URL_MAX = 500;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,6 +61,17 @@ public class Payment {
     @Column(name = "approved_at")
     private OffsetDateTime approvedAt;
 
+    @Column(name = "receipt_url", length = RECEIPT_URL_MAX)
+    private String receiptUrl;
+
+    /** A11 자동 조회 횟수 (V6) */
+    @Column(name = "sync_attempts", nullable = false)
+    private int syncAttempts;
+
+    /** A11 다음 자동 조회 시각. null이면 자동 조회 대상이 아니다 (결과 확정 또는 한도 초과) (V6) */
+    @Column(name = "next_sync_at")
+    private OffsetDateTime nextSyncAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -81,11 +94,13 @@ public class Payment {
         return p;
     }
 
-    public void approve(String tossStatus, String method, OffsetDateTime approvedAt) {
+    /** 승인 성공. 영수증 주소는 500자를 넘으면 잘린 주소가 되므로 남기지 않는다 */
+    public void approve(String tossStatus, String method, OffsetDateTime approvedAt, String receiptUrl) {
         this.status = PaymentStatus.DONE;
         this.tossStatus = cut(tossStatus, SHORT_MAX);
         this.method = cut(method, SHORT_MAX);
         this.approvedAt = approvedAt;
+        this.receiptUrl = receiptUrl == null || receiptUrl.length() > RECEIPT_URL_MAX ? null : receiptUrl;
     }
 
     public void fail(String errorCode, String errorMessage) {
@@ -97,6 +112,31 @@ public class Payment {
     public void recordError(String errorCode, String errorMessage) {
         this.errorCode = cut(errorCode, ERROR_CODE_MAX);
         this.errorMessage = cut(errorMessage, ERROR_MESSAGE_MAX);
+    }
+
+    /** A11 결과 불명: 곧바로 첫 자동 조회를 하도록 예약한다 */
+    public void scheduleSync(OffsetDateTime now) {
+        this.syncAttempts = 0;
+        this.nextSyncAt = now;
+    }
+
+    /**
+     * A11 자동 조회 한 번을 마쳤는데 아직 결과 불명이다. 횟수를 올리고 interval 뒤로 다시 예약한다.
+     * maxAttempts에 닿으면 예약을 지우고 true (수동 확인 대상)
+     */
+    public boolean afterSyncAttempt(OffsetDateTime now, Duration interval, int maxAttempts) {
+        this.syncAttempts++;
+        if (syncAttempts >= maxAttempts) {
+            this.nextSyncAt = null;
+            return true;
+        }
+        this.nextSyncAt = now.plus(interval);
+        return false;
+    }
+
+    /** A11 결과가 확정됐거나 더 볼 필요가 없다 */
+    public void stopSync() {
+        this.nextSyncAt = null;
     }
 
     private static String cut(String value, int max) {
@@ -114,6 +154,9 @@ public class Payment {
     public String getErrorCode() { return errorCode; }
     public String getErrorMessage() { return errorMessage; }
     public OffsetDateTime getApprovedAt() { return approvedAt; }
+    public String getReceiptUrl() { return receiptUrl; }
+    public int getSyncAttempts() { return syncAttempts; }
+    public OffsetDateTime getNextSyncAt() { return nextSyncAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

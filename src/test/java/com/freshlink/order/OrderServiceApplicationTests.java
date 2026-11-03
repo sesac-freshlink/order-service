@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Import;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest(properties = {"app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results",
+@SpringBootTest(properties = {"app.queue.commands=test-inventory-commands.fifo", "app.queue.results=test-inventory-results", "app.queue.notifications=test-notification-events",
 		"spring.cloud.aws.sqs.listener.auto-startup=false"})
 class OrderServiceApplicationTests {
 

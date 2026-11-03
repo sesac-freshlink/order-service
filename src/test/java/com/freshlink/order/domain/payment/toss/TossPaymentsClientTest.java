@@ -68,6 +68,33 @@ class TossPaymentsClientTest {
         assertThat(r.tossStatus()).isEqualTo("DONE");
         assertThat(r.method()).isEqualTo("카드");
         assertThat(r.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-10-20T15:35:10+09:00"));
+        assertThat(r.receiptUrl()).isNull();
+    }
+
+    @Test
+    void 승인_성공_응답의_receipt_url을_영수증_주소로_읽는다() {
+        server.expect(requestTo(BASE + "/v1/payments/confirm"))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\",\"approvedAt\":\"2026-10-20T15:35:10+09:00\","
+                        + "\"receipt\":{\"url\":\"https://dashboard.tosspayments.com/receipt/redirection?transactionId=tviva_1\"}}",
+                        MediaType.APPLICATION_JSON));
+
+        TossConfirmResult r = confirm();
+
+        assertThat(r.outcome()).isEqualTo(TossOutcome.APPROVED);
+        assertThat(r.receiptUrl())
+                .isEqualTo("https://dashboard.tosspayments.com/receipt/redirection?transactionId=tviva_1");
+    }
+
+    @Test
+    void receipt가_null이어도_승인_성공이고_영수증_주소만_없다() {
+        server.expect(requestTo(BASE + "/v1/payments/confirm"))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\",\"receipt\":null}",
+                        MediaType.APPLICATION_JSON));
+
+        TossConfirmResult r = confirm();
+
+        assertThat(r.outcome()).isEqualTo(TossOutcome.APPROVED);
+        assertThat(r.receiptUrl()).isNull();
     }
 
     @Test
@@ -159,7 +186,8 @@ class TossPaymentsClientTest {
                 .andExpect(header("Authorization", basic))
                 .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\","
                         + "\"approvedAt\":\"2026-10-20T15:35:10+09:00\",\"orderId\":\"FL-20261020-000123\","
-                        + "\"totalAmount\":3400}", MediaType.APPLICATION_JSON));
+                        + "\"totalAmount\":3400,\"receipt\":{\"url\":\"https://receipt.test/1\"}}",
+                        MediaType.APPLICATION_JSON));
 
         TossLookupResult r = client.lookup("pk_1");
 
@@ -170,6 +198,7 @@ class TossPaymentsClientTest {
         assertThat(r.approvedAt()).isEqualTo(OffsetDateTime.parse("2026-10-20T15:35:10+09:00"));
         assertThat(r.orderId()).isEqualTo("FL-20261020-000123");
         assertThat(r.totalAmount()).isEqualTo(3400L);
+        assertThat(r.receiptUrl()).isEqualTo("https://receipt.test/1");
     }
 
     @Test
@@ -185,5 +214,57 @@ class TossPaymentsClientTest {
         server.expect(requestTo(BASE + "/v1/payments/pk_1"))
                 .andRespond(withException(new SocketTimeoutException("read timed out")));
         assertThat(client.lookup("pk_1").found()).isFalse();
+    }
+
+    // ---------------------------------------------------------------- A9 결제 취소
+
+    @Test
+    void 취소는_POST_cancel에_사유와_멱등키를_보내고_CANCELED면_취소_시각을_읽는다() {
+        server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", KEY))
+                .andExpect(jsonPath("$.cancelReason").value("단순 변심"))
+                .andExpect(jsonPath("$.cancelAmount").doesNotExist())
+                .andRespond(withSuccess("{\"status\":\"CANCELED\",\"cancels\":[{\"cancelAmount\":3400,"
+                        + "\"canceledAt\":\"2026-10-25T15:00:03+09:00\",\"cancelStatus\":\"DONE\"}]}",
+                        MediaType.APPLICATION_JSON));
+
+        TossCancelResult r = client.cancel("pk_1", "단순 변심", KEY);
+
+        server.verify();
+        assertThat(r.outcome()).isEqualTo(TossCancelOutcome.CANCELED);
+        assertThat(r.canceledAt()).isEqualTo(OffsetDateTime.parse("2026-10-25T15:00:03+09:00"));
+    }
+
+    @Test
+    void 취소_오류는_취소_목록으로_분류하고_타임아웃은_결과_불명() {
+        server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_JSON)
+                        .body(error("NOT_CANCELABLE_PAYMENT")));
+        server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))
+                .andRespond(withException(new SocketTimeoutException("read timed out")));
+
+        TossCancelResult rejected = client.cancel("pk_1", "단순 변심", KEY);
+        TossCancelResult timeout = client.cancel("pk_1", "단순 변심", KEY);
+
+        assertThat(rejected.outcome()).isEqualTo(TossCancelOutcome.DEFINITE_FAILURE);
+        assertThat(rejected.errorCode()).isEqualTo("NOT_CANCELABLE_PAYMENT");
+        assertThat(timeout.outcome()).isEqualTo(TossCancelOutcome.UNKNOWN);
+    }
+
+    @Test
+    void 취소_확인_조회는_CANCELED면_취소_DONE이면_아직_취소_안_됨_오류는_결과_불명() {
+        server.expect(requestTo(BASE + "/v1/payments/pk_1")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"status\":\"CANCELED\",\"cancels\":[{\"canceledAt\":\"2026-10-25T15:00:03+09:00\"}]}",
+                        MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/v1/payments/pk_1"))
+                .andRespond(withSuccess("{\"status\":\"DONE\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/v1/payments/pk_1"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR).contentType(MediaType.APPLICATION_JSON)
+                        .body(error("COMMON_ERROR")));
+
+        assertThat(client.lookupCancel("pk_1").outcome()).isEqualTo(TossCancelOutcome.CANCELED);
+        assertThat(client.lookupCancel("pk_1").outcome()).isEqualTo(TossCancelOutcome.NOT_CANCELED);
+        assertThat(client.lookupCancel("pk_1").outcome()).isEqualTo(TossCancelOutcome.UNKNOWN);
     }
 }
