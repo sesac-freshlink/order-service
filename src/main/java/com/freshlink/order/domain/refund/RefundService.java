@@ -7,6 +7,7 @@ import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
 import com.freshlink.order.domain.payment.Payment;
 import com.freshlink.order.domain.payment.PaymentRepository;
+import com.freshlink.order.domain.payment.SimulatedPayments;
 import com.freshlink.order.domain.payment.toss.TossCancelOutcome;
 import com.freshlink.order.domain.payment.toss.TossCancelResult;
 import com.freshlink.order.domain.payment.toss.TossPaymentsClient;
@@ -90,12 +91,12 @@ public class RefundService {
             }
             throw new BusinessException(OrderErrorCode.ORDER_NOT_CANCELABLE);
         }
-        if (!toss.isConfigured()) {
+        Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow(() ->
+                new IllegalStateException("결제 완료 주문에 결제 기록이 없다: orderId=" + orderId));
+        if (!SimulatedPayments.isSimulated(payment.getPaymentKey()) && !toss.isConfigured()) {
             // 부르기 전에 알 수 있는 설정 오류다. 환불을 처리 중으로 묶어 두지 않고 그대로 둔다
             throw new IllegalStateException("TOSS_SECRET_KEY가 설정되지 않아 환불을 시작하지 않는다: orderId=" + orderId);
         }
-        Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow(() ->
-                new IllegalStateException("결제 완료 주문에 결제 기록이 없다: orderId=" + orderId));
         order.startRefund(now);
         int attemptNo = refundRepository.countByOrderId(orderId) + 1;
         Refund refund = refundRepository.saveAndFlush(Refund.start(orderId, attemptNo, requester.type(),
@@ -132,6 +133,11 @@ public class RefundService {
     }
 
     private TossCancelResult callToss(Start start) {
+        if (SimulatedPayments.isSimulated(start.paymentKey())) {
+            // 시뮬레이터 결제(SIM-)는 토스에 없는 결제다. 토스를 부르지 않고 바로 취소 완료로 본다 (3차 1-3)
+            log.info("시뮬레이터 결제라 토스 없이 환불 완료 refundId={}", start.refundId());
+            return TossCancelResult.canceled(SimulatedPayments.STATUS_CANCELED, null);
+        }
         try {
             return toss.cancel(start.paymentKey(), start.cancelReason(), start.tossKey());
         } catch (RuntimeException e) {
