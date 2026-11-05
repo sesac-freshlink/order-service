@@ -55,6 +55,10 @@ public class PaymentSyncService {
             return paymentRepository.findByOrderId(orderId).orElseThrow(() ->
                     new IllegalStateException("승인 중인 주문에 결제 기록이 없다: orderId=" + orderId)).getPaymentKey();
         });
+        if (SimulatedPayments.isSimulated(paymentKey)) {
+            // 시뮬레이터 결제는 승인 중에 머물지 않는다(한 트랜잭션에서 PAID). 혹시 남았어도 토스에 없으니 조회하지 않는다
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_SYNCABLE);
+        }
         if (!toss.isConfigured()) {
             throw new IllegalStateException("TOSS_SECRET_KEY가 설정되지 않아 결제 조회를 하지 않는다: orderId=" + orderId);
         }
