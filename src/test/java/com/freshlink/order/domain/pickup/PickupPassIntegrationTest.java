@@ -24,6 +24,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -213,6 +214,30 @@ class PickupPassIntegrationTest {
         list(store, "000000").andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("PICKUP_CODE_TOO_MANY_ATTEMPTS"));
         list(store + 1, "000000").andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 틀린_횟수_키에_만료가_없으면_다음_실패에서_1분을_다시_건다() throws Exception {
+        long store = storeId();
+        // 앞에서 만료 걸기가 실패해 만료 없이 남은 키
+        redis.opsForValue().set(PickupPassStore.failKey(store), "3");
+        assertThat(redis.getExpire(PickupPassStore.failKey(store))).isEqualTo(-1L);
+
+        list(store, "000000").andExpect(status().isNotFound());
+
+        assertThat(redis.opsForValue().get(PickupPassStore.failKey(store))).isEqualTo("4");
+        assertThat(redis.getExpire(PickupPassStore.failKey(store))).isBetween(1L, 60L);
+    }
+
+    @Test
+    void 같은_점포에_연결과_끊김이_섞여도_새_연결은_맵에_남아_알림을_받는다() {
+        long store = storeId();
+        for (int i = 0; i < 50; i++) {
+            SseEmitter old = stream.subscribe(store);
+            old.complete();
+            stream.subscribe(store);
+        }
+        assertThat(stream.notifyScan(store, "token")).isGreaterThanOrEqualTo(1);
     }
 
     // ---------------------------------------------------------------- OR-11 일괄 승인

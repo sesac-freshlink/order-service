@@ -74,11 +74,18 @@ public class PickupPassStore {
         return count != null && Integer.parseInt(count) >= MAX_CODE_FAILS;
     }
 
-    /** 코드가 틀린 횟수를 1 늘린다. 처음이면 1분 뒤 저절로 지워진다 */
+    /**
+     * 코드가 틀린 횟수를 1 늘린다. 처음이면 1분 뒤 저절로 지워진다.
+     * 앞에서 만료 걸기가 실패해 만료 없는 키가 남았으면 여기서 다시 건다(안 그러면 그 점포는 계속 429)
+     */
     public void recordCodeFail(Long storeId) {
-        Long count = redis.opsForValue().increment(failKey(storeId));
-        if (count != null && count == 1) {
-            redis.expire(failKey(storeId), FAIL_WINDOW);
+        String key = failKey(storeId);
+        Long count = redis.opsForValue().increment(key);
+        if (count == null) {
+            return;
+        }
+        if (count == 1 || Long.valueOf(-1L).equals(redis.getExpire(key))) {
+            redis.expire(key, FAIL_WINDOW);
         }
     }
 

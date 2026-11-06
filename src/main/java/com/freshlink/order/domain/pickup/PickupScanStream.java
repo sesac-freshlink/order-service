@@ -27,7 +27,12 @@ public class PickupScanStream {
     /** 점포의 연결을 하나 더한다. 응답 머리를 바로 보내려고 빈 이벤트를 한 번 보낸다 */
     public SseEmitter subscribe(Long storeId) {
         SseEmitter emitter = newEmitter();
-        emitters.computeIfAbsent(storeId, k -> ConcurrentHashMap.newKeySet()).add(emitter);
+        // 집합 만들기와 더하기를 한 번에 한다. 따로 하면 그 사이 remove 가 빈 집합을 맵에서 지워 이 연결이 버려질 수 있다
+        emitters.compute(storeId, (k, set) -> {
+            Set<SseEmitter> target = set == null ? ConcurrentHashMap.newKeySet() : set;
+            target.add(emitter);
+            return target;
+        });
         emitter.onCompletion(() -> remove(storeId, emitter));
         emitter.onTimeout(() -> remove(storeId, emitter));
         emitter.onError(e -> remove(storeId, emitter));
