@@ -32,6 +32,8 @@ public enum OrderErrorCode implements ErrorCode {
     ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다"),
     // 선착순 대기열 (API 명세에 아직 없음, 오픈런 문서 2장)
     FIRST_COME_QUANTITY_LIMIT(400, "선착순 상품은 1개만 주문할 수 있습니다"),
+    FIRST_COME_CLEARANCE_NOT_ALLOWED(400, "선착순 상품은 마감세일로 살 수 없어요"),
+    CLEARANCE_NOT_ON_SALE(400, "마감세일은 06:00~23:00에만 살 수 있어요"),
     NOT_FIRST_COME(404, "선착순 상품이 아닙니다"),
     FIRST_COME_TICKET_REQUIRED(409, "차례가 오면 주문할 수 있습니다. 대기 화면에서 순서를 기다려 주세요"),
     FIRST_COME_ALREADY_ORDERED(409, "이미 주문한 선착순 상품입니다"),

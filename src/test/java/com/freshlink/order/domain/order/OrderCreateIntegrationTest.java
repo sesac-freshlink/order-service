@@ -182,6 +182,18 @@ class OrderCreateIntegrationTest {
     }
 
     @Test
+    void 마감세일_수량이_전체_수량보다_많으면_400_VALIDATION_ERROR() throws Exception {
+        String body = "{\"storeId\":7,\"storeName\":\"프레시마트 강남점\",\"productId\":10,\"quantity\":2,"
+                + "\"clearanceQuantity\":3}";
+        mockMvc.perform(req(uuid(), uuid(), body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        String negative = "{\"storeId\":7,\"storeName\":\"프레시마트 강남점\",\"productId\":10,\"quantity\":2,"
+                + "\"clearanceQuantity\":-1}";
+        mockMvc.perform(req(uuid(), uuid(), negative)).andExpect(status().isBadRequest());
+    }
+
+    @Test
     void 같은_키_동시_요청도_주문은_한_건만_만든다() throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
