@@ -28,6 +28,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                                                                                Collection<OrderStatus> statuses,
                                                                                RefundStatus refundStatus);
 
+    /** A13 픽업 QR: 고객의 그 상태들·환불 상태 주문, 결제 시각 오래된 순 (점포를 가리지 않는다) */
+    List<Order> findByCustomerIdAndStatusInAndRefundStatusOrderByPaidAtAscIdAsc(String customerId,
+                                                                             Collection<OrderStatus> statuses,
+                                                                             RefundStatus refundStatus);
+
+    /** A13 픽업 QR: 그 고객의 이 점포 주문 중 그 상태들·환불 상태, 결제 시각 오래된 순 */
+    List<Order> findByCustomerIdAndStoreIdAndStatusInAndRefundStatusOrderByPaidAtAscIdAsc(String customerId, Long storeId,
+                                                                                       Collection<OrderStatus> statuses,
+                                                                                       RefundStatus refundStatus);
+
     /**
      * A3 고객 주문 내역: 본인 주문 중 그 상태들(PAID는 그 환불 상태들만), 만든 시각 start 이상 end 미만,
      * 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5)
