@@ -97,4 +97,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             + " and o.closedAt >= :start and o.closedAt < :end")
     List<OffsetDateTime> findClosedAtForStore(@Param("storeId") Long storeId, @Param("status") OrderStatus status,
                                               @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
+
+    /** A14 회원탈퇴: 고객의 진행 중 주문 수 (추가 명세 0.4: 진행 중 상태들) */
+    long countByCustomerIdAndStatusIn(String customerId, Collection<OrderStatus> statuses);
 }
