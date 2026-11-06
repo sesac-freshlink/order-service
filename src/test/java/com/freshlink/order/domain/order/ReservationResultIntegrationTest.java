@@ -129,6 +129,35 @@ class ReservationResultIntegrationTest {
     }
 
     @Test
+    void 기본_주문의_lot은_마감세일_아님_단가_없음으로_저장된다() {
+        Order order = newOrder();
+
+        handler.handle(reserved(order, twoLots()));
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM order_lot WHERE order_id = ? AND clearance = FALSE "
+                + "AND unit_price IS NULL", Integer.class, order.getId())).isEqualTo(2);
+        assertThat(reload(order).getClearanceQuantity()).isZero();
+    }
+
+    @Test
+    void 마감세일을_요청했는데_마감세일_lot이_없으면_재고_없음_CLEARANCE_SOLD_OUT으로_닫고_RELEASE_CANCELED() {
+        Order order = orderRepository.saveAndFlush(Order.create(UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(), 1L, "프레시 강남점", 15L, 3, 1));
+        ReservedMessage message = reserved(order, twoLots());
+
+        handler.handle(message);
+
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.OUT_OF_STOCK);
+        assertThat(saved.getFailureReason()).isEqualTo(OrderFailureReason.CLEARANCE_SOLD_OUT);
+        assertThat(saved.getAmount()).isNull();
+        assertThat(lotCount(order)).isZero();
+        assertThat(releasesOf(order)).singleElement()
+                .satisfies(r -> assertThat(r.reason()).isEqualTo(ReleaseReason.CANCELED));
+        assertThat(processed(message)).isTrue();
+    }
+
+    @Test
     void 같은_RESERVED를_두_번_받아도_한_번만_반영한다() {
         Order order = newOrder();
         ReservedMessage message = reserved(order, twoLots());
