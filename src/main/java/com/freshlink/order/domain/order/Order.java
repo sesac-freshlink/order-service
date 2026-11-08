@@ -188,12 +188,14 @@ public class Order {
         this.paymentExpiresAt = now.plus(PAYMENT_TIMEOUT);
     }
 
-    /** RESERVE_FAILED 반영: 재고 확보 실패로 주문을 닫는다 */
-    public void rejectReservation(OrderFailureReason reason, int availableQuantity, OffsetDateTime now) {
+    /** RESERVE_FAILED 반영: 재고 확보 실패로 주문을 닫는다. clearanceAvailableQuantity는 마감세일을 요청한 주문에만 온다(없으면 null) */
+    public void rejectReservation(OrderFailureReason reason, int availableQuantity, Integer clearanceAvailableQuantity,
+                                  OffsetDateTime now) {
         requireReserving();
         changeStatus(OrderStatus.OUT_OF_STOCK);
         this.failureReason = reason;
         this.availableQuantity = availableQuantity;
+        this.clearanceAvailableQuantity = clearanceAvailableQuantity;
         this.closedAt = now;
     }
 

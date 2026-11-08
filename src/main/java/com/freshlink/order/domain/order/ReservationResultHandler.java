@@ -101,16 +101,16 @@ public class ReservationResultHandler {
             return;
         }
         OrderFailureReason reason = OrderFailureReason.valueOf(m.reason().name());
-        order.rejectReservation(reason, m.availableQuantity(), OffsetDateTime.now(clock));
-        log.info("재고 확보 실패 orderId={} reason={} available={}", order.getId(), reason, m.availableQuantity());
+        order.rejectReservation(reason, m.availableQuantity(), m.clearanceAvailableQuantity(), OffsetDateTime.now(clock));
+        log.info("재고 확보 실패 orderId={} reason={} available={} clearanceAvailable={}", order.getId(), reason,
+                m.availableQuantity(), m.clearanceAvailableQuantity());
     }
 
     /**
-     * RESERVED lot을 금액·마감세일 검사용으로 바꾼다. 지금 쪽지(common 0.7.1)에는 lot의 마감세일 여부·단가 칸이 없어
-     * 모두 기본 lot(단가 없음 = 기본 단가)으로 본다. 새 common이 나오면 lot.clearance()·lot.unitPrice()를 넣는다
+     * RESERVED lot을 금액·마감세일 검사용으로 바꾼다 (common 0.8.0). 칸이 없는 옛 쪽지는 기본 lot(단가 없음 = 기본 단가)으로 읽힌다
      */
     private static List<ClearanceRules.PricedLot> pricedLots(ReservedMessage m) {
-        return m.lots().stream().map(lot -> new ClearanceRules.PricedLot(lot.quantity(), false, null)).toList();
+        return m.lots().stream().map(lot -> new ClearanceRules.PricedLot(lot.quantity(), lot.clearance(), lot.unitPrice())).toList();
     }
 
     /**

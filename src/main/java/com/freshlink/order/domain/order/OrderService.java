@@ -275,7 +275,8 @@ public class OrderService {
         LocalDate date = order.getCreatedAt().atZoneSameInstant(KST).toLocalDate();
         order.assignOrderNo(Order.formatOrderNo(order.getId(), date));
         outboxWriter.save(commandsQueue,
-                ReserveMessage.of(order.getId(), order.getStoreId(), order.getProductId(), order.getQuantity()));
+                ReserveMessage.of(order.getId(), order.getStoreId(), order.getProductId(), order.getQuantity(),
+                        order.getClearanceQuantity()));
         return order;
     }
 

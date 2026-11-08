@@ -82,6 +82,11 @@ class OrderServiceTest {
 
         assertThat(result.order().getClearanceQuantity()).isEqualTo(2);
         assertThat(result.order().getQuantity()).isEqualTo(3);
+        ArgumentCaptor<ReserveMessage> captor = ArgumentCaptor.forClass(ReserveMessage.class);
+        verify(outboxWriter).save(eq(QUEUE), captor.capture());
+        assertThat(captor.getValue().quantity()).isEqualTo(3);
+        assertThat(captor.getValue().clearanceQuantity()).isEqualTo(2);
+        assertThat(captor.getValue().regularQuantity()).isEqualTo(1);
     }
 
     @Test

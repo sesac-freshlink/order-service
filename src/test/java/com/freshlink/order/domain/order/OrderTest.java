@@ -60,7 +60,7 @@ class OrderTest {
     void 예약이_거절되면_재고_부족으로_끝난다() {
         Order order = Order.create("c", "k", 1L, "점포", 10L, 2);
 
-        order.rejectReservation(OrderFailureReason.PRODUCT_NOT_FOUND, 0, NOW);
+        order.rejectReservation(OrderFailureReason.PRODUCT_NOT_FOUND, 0, null, NOW);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.OUT_OF_STOCK);
         assertThat(order.getFailureReason()).isEqualTo(OrderFailureReason.PRODUCT_NOT_FOUND);
@@ -75,7 +75,7 @@ class OrderTest {
         order.reserve("상품", 1000L, NOW);
 
         assertThatThrownBy(() -> order.reserve("상품", 1000L, NOW)).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> order.rejectReservation(OrderFailureReason.OUT_OF_STOCK, 1, NOW))
+        assertThatThrownBy(() -> order.rejectReservation(OrderFailureReason.OUT_OF_STOCK, 1, null, NOW))
                 .isInstanceOf(IllegalStateException.class);
     }
 

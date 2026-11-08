@@ -139,6 +139,107 @@ class ReservationResultIntegrationTest {
         assertThat(reload(order).getClearanceQuantity()).isZero();
     }
 
+    /** 수량 3 중 마감세일 clearance개인 RESERVING 주문 */
+    private Order newClearanceOrder(int clearance) {
+        return orderRepository.saveAndFlush(Order.create(UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(), 1L, "프레시 강남점", 15L, 3, clearance));
+    }
+
+    private void assertClosedAsClearanceSoldOut(Order order, ReservedMessage message) {
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.OUT_OF_STOCK);
+        assertThat(saved.getFailureReason()).isEqualTo(OrderFailureReason.CLEARANCE_SOLD_OUT);
+        assertThat(saved.getAmount()).isNull();
+        assertThat(lotCount(order)).isZero();
+        assertThat(releasesOf(order)).singleElement()
+                .satisfies(r -> assertThat(r.reason()).isEqualTo(ReleaseReason.CANCELED));
+        assertThat(processed(message)).isTrue();
+    }
+
+    @Test
+    void 마감세일_2개와_기본_1개면_금액은_lot별_단가_합이고_당일_픽업이며_lot에_단가가_남는다() {
+        Order order = newClearanceOrder(2);
+
+        handler.handle(reserved(order, List.of(ReservedLot.clearance(101L, 2, EXPIRY, 1000L),
+                new ReservedLot(102L, 1, EXPIRY.plusDays(1)))));
+
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.PAYMENT_WAITING);
+        // 1000×2 + 기본 단가 1700×1
+        assertThat(saved.getAmount()).isEqualTo(3700L);
+        assertThat(saved.getUnitPrice()).isEqualTo(1700L);
+        assertThat(saved.getPickupDeadline().toInstant())
+                .isEqualTo(OffsetDateTime.of(2026, 10, 20, 23, 59, 59, 0, KST).toInstant());
+        List<Map<String, Object>> lots = jdbc.queryForList(
+                "SELECT clearance, unit_price FROM order_lot WHERE order_id = ? ORDER BY lot_id", order.getId());
+        assertThat(((Boolean) lots.get(0).get("clearance"))).isTrue();
+        assertThat(((Number) lots.get(0).get("unit_price")).longValue()).isEqualTo(1000L);
+        assertThat(((Boolean) lots.get(1).get("clearance"))).isFalse();
+        assertThat(lots.get(1).get("unit_price")).isNull();
+        assertThat(releasesOf(order)).isEmpty();
+    }
+
+    @Test
+    void 마감세일_lot_수량이_요청과_다르면_닫고_RELEASE_CANCELED() {
+        Order order = newClearanceOrder(2);
+        ReservedMessage message = reserved(order, List.of(ReservedLot.clearance(101L, 1, EXPIRY, 1000L),
+                new ReservedLot(102L, 2, EXPIRY)));
+
+        handler.handle(message);
+
+        assertClosedAsClearanceSoldOut(order, message);
+    }
+
+    @Test
+    void 마감세일_lot에_단가가_없으면_정가로_팔지_않고_닫고_RELEASE_CANCELED() {
+        Order order = newClearanceOrder(1);
+        ReservedMessage message = reserved(order, List.of(new ReservedLot(101L, 1, EXPIRY, true, null),
+                new ReservedLot(102L, 2, EXPIRY)));
+
+        handler.handle(message);
+
+        assertClosedAsClearanceSoldOut(order, message);
+    }
+
+    @Test
+    void 기본_주문에_마감세일_lot이_오면_닫고_RELEASE_CANCELED() {
+        Order order = newOrder();
+        ReservedMessage message = reserved(order, List.of(ReservedLot.clearance(101L, 1, EXPIRY, 1000L),
+                new ReservedLot(102L, 2, EXPIRY)));
+
+        handler.handle(message);
+
+        assertClosedAsClearanceSoldOut(order, message);
+    }
+
+    @Test
+    void RESERVE_FAILED_CLEARANCE_SOLD_OUT이면_마감세일_남은_수가_남고_RELEASE는_없다() {
+        Order order = newClearanceOrder(2);
+
+        handler.handle(ReserveFailedMessage.of(order.getId(), 1L, 15L, ReserveFailReason.CLEARANCE_SOLD_OUT, 5, 1));
+
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.OUT_OF_STOCK);
+        assertThat(saved.getFailureReason()).isEqualTo(OrderFailureReason.CLEARANCE_SOLD_OUT);
+        assertThat(saved.getAvailableQuantity()).isEqualTo(5);
+        assertThat(saved.getClearanceAvailableQuantity()).isEqualTo(1);
+        assertThat(releasesOf(order)).isEmpty();
+    }
+
+    @Test
+    void 마감세일_칸이_없는_옛_RESERVED_JSON은_기본_lot으로_읽혀_기본_주문이_그대로_처리된다() {
+        Order order = newOrder();
+        String json = MessageJson.toJson(reserved(order, twoLots()))
+                .replace(",\"clearance\":false", "").replace(",\"unitPrice\":null", "");
+        assertThat(json).doesNotContain("clearance");
+
+        handler.handle(MessageJson.fromJson(json, ReservedMessage.class));
+
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.PAYMENT_WAITING);
+        assertThat(saved.getAmount()).isEqualTo(5100L);
+    }
+
     @Test
     void 마감세일을_요청했는데_마감세일_lot이_없으면_재고_없음_CLEARANCE_SOLD_OUT으로_닫고_RELEASE_CANCELED() {
         Order order = orderRepository.saveAndFlush(Order.create(UUID.randomUUID().toString(),
