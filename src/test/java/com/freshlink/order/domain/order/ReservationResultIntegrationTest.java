@@ -418,6 +418,30 @@ class ReservationResultIntegrationTest {
     }
 
     @Test
+    void 마감세일_lot_단가가_음수면_반영하지_않고_예외() {
+        assertRejected(order -> reserved(order, List.of(ReservedLot.clearance(101L, 1, EXPIRY, -500L),
+                new ReservedLot(102L, 2, EXPIRY))));
+    }
+
+    @Test
+    void 기본_lot_단가가_음수면_반영하지_않고_예외() {
+        assertRejected(order -> reserved(order, List.of(new ReservedLot(101L, 3, EXPIRY, false, -1L))));
+    }
+
+    @Test
+    void 마감세일_lot_단가가_0원이면_받아들인다() {
+        Order order = newClearanceOrder(1);
+
+        handler.handle(reserved(order, List.of(ReservedLot.clearance(101L, 1, EXPIRY, 0L),
+                new ReservedLot(102L, 2, EXPIRY))));
+
+        Order saved = reload(order);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.PAYMENT_WAITING);
+        // 0×1 + 기본 단가 1700×2
+        assertThat(saved.getAmount()).isEqualTo(3400L);
+    }
+
+    @Test
     void 없는_주문의_결과는_예외() {
         ReservedMessage message = ReservedMessage.of(Long.MAX_VALUE, 1L, 15L, "상품", 3, 1700L, twoLots());
         ReserveFailedMessage failed = ReserveFailedMessage.of(Long.MAX_VALUE, 1L, 15L, ReserveFailReason.OUT_OF_STOCK, 0);

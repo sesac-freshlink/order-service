@@ -163,7 +163,8 @@ public class ReservationResultHandler {
                 && order.getProductId().equals(m.productId())
                 && order.getQuantity() == m.quantity()
                 && !lots.isEmpty()
-                && lots.stream().allMatch(lot -> lot.lotId() != null && lot.quantity() > 0 && lot.expiryDate() != null)
+                && lots.stream().allMatch(lot -> lot.lotId() != null && lot.quantity() > 0 && lot.expiryDate() != null
+                        && (lot.unitPrice() == null || lot.unitPrice() >= 0))
                 && lotSum == m.quantity()
                 && m.unitPrice() >= 0
                 && m.productName() != null && !m.productName().isBlank();
