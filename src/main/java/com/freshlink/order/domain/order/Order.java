@@ -55,6 +55,10 @@ public class Order {
     @Column(name = "quantity", nullable = false)
     private int quantity;
 
+    /** 전체 수량 중 마감세일 수량 (마감세일 함께 사기, V9) */
+    @Column(name = "clearance_quantity", nullable = false)
+    private int clearanceQuantity;
+
     @Column(name = "unit_price")
     private Long unitPrice;
 
@@ -71,6 +75,10 @@ public class Order {
 
     @Column(name = "available_quantity")
     private Integer availableQuantity;
+
+    /** 재고 확보 실패 때 마감세일 남은 수 (V9) */
+    @Column(name = "clearance_available_quantity")
+    private Integer clearanceAvailableQuantity;
 
     @Column(name = "payment_waiting_at")
     private OffsetDateTime paymentWaitingAt;
@@ -132,6 +140,14 @@ public class Order {
         return order;
     }
 
+    /** 마감세일 함께 사기: 전체 수량 중 마감세일 수량을 같이 남긴다 */
+    public static Order create(String customerId, String requestId, Long storeId, String storeName,
+                               Long productId, int quantity, int clearanceQuantity) {
+        Order order = create(customerId, requestId, storeId, storeName, productId, quantity);
+        order.clearanceQuantity = clearanceQuantity;
+        return order;
+    }
+
     /** 주문번호 FL-yyyyMMdd-000123 (id가 6자리를 넘으면 자릿수가 늘어난다) */
     public static String formatOrderNo(Long id, LocalDate date) {
         return String.format("FL-%s-%06d", date.format(DateTimeFormatter.BASIC_ISO_DATE), id);
@@ -147,26 +163,50 @@ public class Order {
 
     /** 같은 Idempotency-Key 재요청이 처음 요청과 같은 내용인지 본다 (점포 이름은 비교하지 않는다) */
     public boolean hasSameContent(Long storeId, Long productId, int quantity) {
-        return this.storeId.equals(storeId) && this.productId.equals(productId) && this.quantity == quantity;
+        return hasSameContent(storeId, productId, quantity, 0);
+    }
+
+    /** 마감세일 수량까지 같아야 같은 요청이다 */
+    public boolean hasSameContent(Long storeId, Long productId, int quantity, int clearanceQuantity) {
+        return this.storeId.equals(storeId) && this.productId.equals(productId) && this.quantity == quantity
+                && this.clearanceQuantity == clearanceQuantity;
     }
 
     /** RESERVED 반영: 상품명·단가를 스냅샷으로 남기고 금액을 확정해 결제 대기로 바꾼다 */
     public void reserve(String productName, long unitPrice, OffsetDateTime now) {
+        reserve(productName, unitPrice, unitPrice * quantity, now);
+    }
+
+    /** 마감세일 함께 사기: 금액은 lot별 단가로 계산한 값(ClearanceRules.amount)이다. unitPrice는 기본 단가 */
+    public void reserve(String productName, long unitPrice, long amount, OffsetDateTime now) {
         requireReserving();
         this.productName = productName;
         this.unitPrice = unitPrice;
-        this.amount = unitPrice * quantity;
+        this.amount = amount;
         changeStatus(OrderStatus.PAYMENT_WAITING);
         this.paymentWaitingAt = now;
         this.paymentExpiresAt = now.plus(PAYMENT_TIMEOUT);
     }
 
-    /** RESERVE_FAILED 반영: 재고 확보 실패로 주문을 닫는다 */
-    public void rejectReservation(OrderFailureReason reason, int availableQuantity, OffsetDateTime now) {
+    /** RESERVE_FAILED 반영: 재고 확보 실패로 주문을 닫는다. clearanceAvailableQuantity는 마감세일을 요청한 주문에만 온다(없으면 null) */
+    public void rejectReservation(OrderFailureReason reason, int availableQuantity, Integer clearanceAvailableQuantity,
+                                  OffsetDateTime now) {
         requireReserving();
         changeStatus(OrderStatus.OUT_OF_STOCK);
         this.failureReason = reason;
         this.availableQuantity = availableQuantity;
+        this.clearanceAvailableQuantity = clearanceAvailableQuantity;
+        this.closedAt = now;
+    }
+
+    /**
+     * 받은 lot이 요청한 마감세일 수량과 맞지 않아(옛 inventory 등) 주문을 닫는다. 화면은 "마감세일이 끝났어요".
+     * inventory가 잡은 재고는 부르는 쪽이 RELEASE(CANCELED)로 돌려준다
+     */
+    public void rejectClearanceMismatch(OffsetDateTime now) {
+        requireReserving();
+        changeStatus(OrderStatus.OUT_OF_STOCK);
+        this.failureReason = OrderFailureReason.CLEARANCE_SOLD_OUT;
         this.closedAt = now;
     }
 
@@ -354,11 +394,13 @@ public class Order {
     public Long getProductId() { return productId; }
     public String getProductName() { return productName; }
     public int getQuantity() { return quantity; }
+    public int getClearanceQuantity() { return clearanceQuantity; }
     public Long getUnitPrice() { return unitPrice; }
     public Long getAmount() { return amount; }
     public OrderStatus getStatus() { return status; }
     public OrderFailureReason getFailureReason() { return failureReason; }
     public Integer getAvailableQuantity() { return availableQuantity; }
+    public Integer getClearanceAvailableQuantity() { return clearanceAvailableQuantity; }
     public OffsetDateTime getPaymentWaitingAt() { return paymentWaitingAt; }
     public OffsetDateTime getPaymentExpiresAt() { return paymentExpiresAt; }
     public OffsetDateTime getPaidAt() { return paidAt; }

@@ -158,6 +158,18 @@ class FirstComeQueueIntegrationTest {
     }
 
     @Test
+    void 선착순_상품에_마감세일_수량이_오면_400_FIRST_COME_CLEARANCE_NOT_ALLOWED() throws Exception {
+        remaining(108, 5);
+        mockMvc.perform(post("/orders").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"storeId\":" + STORE + ",\"storeName\":\"프레시 강남점\",\"productId\":108"
+                                + ",\"quantity\":1,\"clearanceQuantity\":1}")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .header("X-User-Id", user()).header("X-User-Role", "CUSTOMER"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("FIRST_COME_CLEARANCE_NOT_ALLOWED"));
+    }
+
+    @Test
     void 입장권이_없으면_선착순_상품_주문은_409() throws Exception {
         remaining(106, 5);
         mockMvc.perform(order(user(), 106, 1)).andExpect(status().isConflict())

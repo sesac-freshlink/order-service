@@ -30,6 +30,12 @@ public class OrderLot {
     @Column(name = "quantity", nullable = false)
     private int quantity;
 
+    @Column(name = "clearance", nullable = false)
+    private boolean clearance;
+
+    @Column(name = "unit_price")
+    private Long unitPrice;
+
     @Column(name = "expiry_at", nullable = false)
     private OffsetDateTime expiryAt;
 
@@ -49,10 +55,21 @@ public class OrderLot {
         return lot;
     }
 
+    /** 마감세일 함께 사기: lot마다 마감세일 여부와 단가(없으면 주문 기본 단가)를 남긴다 */
+    public static OrderLot of(Long orderId, Long lotId, int quantity, OffsetDateTime expiryAt,
+                              boolean clearance, Long unitPrice) {
+        OrderLot lot = of(orderId, lotId, quantity, expiryAt);
+        lot.clearance = clearance;
+        lot.unitPrice = unitPrice;
+        return lot;
+    }
+
     public Long getId() { return id; }
     public Long getOrderId() { return orderId; }
     public Long getLotId() { return lotId; }
     public int getQuantity() { return quantity; }
+    public boolean isClearance() { return clearance; }
+    public Long getUnitPrice() { return unitPrice; }
     public OffsetDateTime getExpiryAt() { return expiryAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }

@@ -80,6 +80,12 @@ class OrderDetailIntegrationTest {
                 .andExpect(jsonPath("$.productName").value("매운 컵라면 115g"))
                 .andExpect(jsonPath("$.unitPrice").value(1700))
                 .andExpect(jsonPath("$.amount").value(3400))
+                .andExpect(jsonPath("$.clearanceQuantity").value(0))
+                .andExpect(jsonPath("$.lines.length()").value(1))
+                .andExpect(jsonPath("$.lines[0].clearance").value(false))
+                .andExpect(jsonPath("$.lines[0].quantity").value(2))
+                .andExpect(jsonPath("$.lines[0].unitPrice").value(1700))
+                .andExpect(jsonPath("$.lines[0].amount").value(3400))
                 .andExpect(jsonPath("$.paymentExpiresAt").value(org.hamcrest.Matchers.matchesPattern(KST_PATTERN)))
                 .andExpect(jsonPath("$.paidAt").isEmpty());
     }

@@ -44,9 +44,58 @@ class OrderServiceTest {
     @BeforeEach
     void setUp() {
         TransactionTemplate tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
-        service = new OrderService(orderRepository, mock(PaymentRepository.class), mock(RefundRepository.class),
-                outboxWriter, tx, QUEUE, "test-notification-events",
-                Clock.fixed(Instant.parse("2026-10-20T01:00:00Z"), ZoneId.of("Asia/Seoul")));
+        service = serviceAt(Instant.parse("2026-10-20T01:00:00Z"));
+    }
+
+    private OrderService serviceAt(Instant now) {
+        TransactionTemplate tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
+        return new OrderService(orderRepository, mock(OrderLotRepository.class), mock(PaymentRepository.class),
+                mock(RefundRepository.class), outboxWriter, tx, QUEUE, "test-notification-events",
+                Clock.fixed(now, ZoneId.of("Asia/Seoul")));
+    }
+
+    @Test
+    void 마감세일은_KST_23시가_지나면_400_CLEARANCE_NOT_ON_SALE() {
+        when(orderRepository.findByCustomerIdAndRequestId(CUSTOMER, KEY)).thenReturn(Optional.empty());
+        // KST 23:30 = UTC 14:30
+        OrderService night = serviceAt(Instant.parse("2026-10-20T14:30:00Z"));
+
+        assertThatThrownBy(() -> night.create(CUSTOMER, KEY, new CreateOrderRequest(1L, "프레시마트 강남점", 10L, 2, 1)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.code()).isEqualTo("CLEARANCE_NOT_ON_SALE"));
+        // 기본만 사는 주문은 시간과 상관없다
+        when(orderRepository.saveAndFlush(any(Order.class))).thenReturn(saved(124L));
+        assertThat(night.create(CUSTOMER, KEY, request(2)).created()).isTrue();
+    }
+
+    @Test
+    void 판매_시간_안의_마감세일_주문은_마감세일_수량을_저장한다() {
+        when(orderRepository.findByCustomerIdAndRequestId(CUSTOMER, KEY)).thenReturn(Optional.empty());
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            ReflectionTestUtils.setField(o, "id", 125L);
+            ReflectionTestUtils.setField(o, "createdAt", OffsetDateTime.parse("2026-10-20T10:00:00+09:00"));
+            return o;
+        });
+
+        CreateOrderResult result = service.create(CUSTOMER, KEY, new CreateOrderRequest(1L, "프레시마트 강남점", 10L, 3, 2));
+
+        assertThat(result.order().getClearanceQuantity()).isEqualTo(2);
+        assertThat(result.order().getQuantity()).isEqualTo(3);
+        ArgumentCaptor<ReserveMessage> captor = ArgumentCaptor.forClass(ReserveMessage.class);
+        verify(outboxWriter).save(eq(QUEUE), captor.capture());
+        assertThat(captor.getValue().quantity()).isEqualTo(3);
+        assertThat(captor.getValue().clearanceQuantity()).isEqualTo(2);
+        assertThat(captor.getValue().regularQuantity()).isEqualTo(1);
+    }
+
+    @Test
+    void 같은_키로_마감세일_수량만_다르게_보내면_409_IDEMPOTENCY_KEY_REUSED() {
+        when(orderRepository.findByCustomerIdAndRequestId(CUSTOMER, KEY)).thenReturn(Optional.of(saved(126L)));
+
+        assertThatThrownBy(() -> service.create(CUSTOMER, KEY, new CreateOrderRequest(1L, "프레시마트 강남점", 10L, 2, 1)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.code()).isEqualTo("IDEMPOTENCY_KEY_REUSED"));
     }
 
     private CreateOrderRequest request(int quantity) {

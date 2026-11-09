@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -75,10 +76,20 @@ public class ReservationResultHandler {
             return;
         }
         validate(order, m);
-        order.reserve(m.productName(), m.unitPrice(), OffsetDateTime.now(clock));
-        order.assignPickupDeadline(m.lots().stream().map(ReservedLot::expiryDate).min(OffsetDateTime::compareTo).orElseThrow());
-        orderLotRepository.saveAll(m.lots().stream()
-                .map(lot -> OrderLot.of(order.getId(), lot.lotId(), lot.quantity(), lot.expiryDate()))
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        List<ClearanceRules.PricedLot> priced = pricedLots(m);
+        if (!ClearanceRules.matches(order.getClearanceQuantity(), priced)) {
+            closeClearanceMismatch(order, m, now);
+            return;
+        }
+        order.reserve(m.productName(), m.unitPrice(), ClearanceRules.amount(m.unitPrice(), priced), now);
+        OffsetDateTime earliest = m.lots().stream().map(ReservedLot::expiryDate)
+                .min(OffsetDateTime::compareTo).orElseThrow();
+        order.assignPickupDeadline(ClearanceRules.pickupDeadline(earliest, now, order.getClearanceQuantity() > 0));
+        List<ReservedLot> lots = m.lots();
+        orderLotRepository.saveAll(IntStream.range(0, lots.size())
+                .mapToObj(i -> OrderLot.of(order.getId(), lots.get(i).lotId(), lots.get(i).quantity(),
+                        lots.get(i).expiryDate(), priced.get(i).clearance(), priced.get(i).unitPrice()))
                 .toList());
         log.info("재고 확보 orderId={} amount={} lots={} status={}",
                 order.getId(), order.getAmount(), m.lots().size(), order.getStatus());
@@ -90,8 +101,27 @@ public class ReservationResultHandler {
             return;
         }
         OrderFailureReason reason = OrderFailureReason.valueOf(m.reason().name());
-        order.rejectReservation(reason, m.availableQuantity(), OffsetDateTime.now(clock));
-        log.info("재고 확보 실패 orderId={} reason={} available={}", order.getId(), reason, m.availableQuantity());
+        order.rejectReservation(reason, m.availableQuantity(), m.clearanceAvailableQuantity(), OffsetDateTime.now(clock));
+        log.info("재고 확보 실패 orderId={} reason={} available={} clearanceAvailable={}", order.getId(), reason,
+                m.availableQuantity(), m.clearanceAvailableQuantity());
+    }
+
+    /**
+     * RESERVED lot을 금액·마감세일 검사용으로 바꾼다 (common 0.8.0). 칸이 없는 옛 쪽지는 기본 lot(단가 없음 = 기본 단가)으로 읽힌다
+     */
+    private static List<ClearanceRules.PricedLot> pricedLots(ReservedMessage m) {
+        return m.lots().stream().map(lot -> new ClearanceRules.PricedLot(lot.quantity(), lot.clearance(), lot.unitPrice())).toList();
+    }
+
+    /**
+     * 받은 lot이 요청한 마감세일 수량과 맞지 않으면(옛 inventory 등) 주문을 닫고 inventory가 잡은 재고를 돌려준다.
+     * 쪽지 자체는 정상이라 예외(DLQ)로 보내지 않는다. 고객 화면은 "마감세일이 끝났어요"
+     */
+    private void closeClearanceMismatch(Order order, ReservedMessage m, OffsetDateTime now) {
+        order.rejectClearanceMismatch(now);
+        outboxWriter.save(commandsQueue, ReleaseMessage.of(order.getId(), order.getStoreId(), ReleaseReason.CANCELED));
+        log.warn("받은 lot이 요청한 마감세일 수량과 맞지 않아 주문을 닫고 재고를 놓아준다 orderId={} clearance={} messageId={}",
+                order.getId(), order.getClearanceQuantity(), m.messageId());
     }
 
     /** 없는 주문이면 예외: 큐 접두사가 다르거나 버그다. DLQ로 보내 개발자가 본다 */
@@ -133,7 +163,8 @@ public class ReservationResultHandler {
                 && order.getProductId().equals(m.productId())
                 && order.getQuantity() == m.quantity()
                 && !lots.isEmpty()
-                && lots.stream().allMatch(lot -> lot.lotId() != null && lot.quantity() > 0 && lot.expiryDate() != null)
+                && lots.stream().allMatch(lot -> lot.lotId() != null && lot.quantity() > 0 && lot.expiryDate() != null
+                        && (lot.unitPrice() == null || lot.unitPrice() >= 0))
                 && lotSum == m.quantity()
                 && m.unitPrice() >= 0
                 && m.productName() != null && !m.productName().isBlank();
