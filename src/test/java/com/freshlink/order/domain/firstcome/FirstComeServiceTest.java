@@ -1,6 +1,7 @@
 package com.freshlink.order.domain.firstcome;
 
 import com.freshlink.order.domain.order.OrderRepository;
+import com.freshlink.order.domain.order.OrderStatus;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +25,12 @@ class FirstComeServiceTest {
             Duration.ofSeconds(2), Duration.ofSeconds(15));
     private final FirstComeService service = new FirstComeService(mock(FirstComeQueue.class), inventory,
             mock(OrderRepository.class), properties, clock);
+
+    @Test
+    void 픽업_신청한_주문도_산_것으로_센다() {
+        assertThat(FirstComeService.HOLDING).contains(OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED,
+                OrderStatus.READY_FOR_PICKUP);
+    }
 
     @Test
     void 캐시는_상품_수_상한을_넘지_않는다() {

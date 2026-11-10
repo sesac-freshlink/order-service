@@ -7,7 +7,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 /**
- * 표의 고객이 이 점포에서 받아 갈 주문(결제 완료·픽업 준비 완료, 환불 NONE, 기한 이내), 결제 시각 오래된 순.
+ * 표의 고객이 이 점포에서 받아 갈 주문(픽업 준비 완료, 환불 NONE, 기한 이내. 11/10부터 준비 완료만), 결제 시각 오래된 순.
  * 승인할 때 쓰는 표를 같이 돌려준다(코드로 찾은 경우에도). 고객 정보는 내리지 않는다
  */
 public record PickupPassOrdersResponse(String token, List<Item> orders) {

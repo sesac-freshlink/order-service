@@ -27,7 +27,9 @@ public enum OrderStatus {
     /** 결제 전 고객 직접 취소 (A7). 재고는 RELEASE(CANCELED)로 돌려준다 */
     CANCELED,
     /** 점주가 포장을 끝내고 "픽업 준비 완료"를 누름 (N-02). 고객에게 픽업 준비 완료 알림이 간다 */
-    READY_FOR_PICKUP;
+    READY_FOR_PICKUP,
+    /** 고객이 "픽업 신청"을 누름 (11/10 경우 결정). 점주는 신청된 주문만 준비한다. 점주에게 새 픽업 주문 알림이 간다 */
+    PICKUP_REQUESTED;
 
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED = new EnumMap<>(OrderStatus.class);
 
@@ -38,8 +40,10 @@ public enum OrderStatus {
         ALLOWED.put(PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED, CANCELED));
         // 승인 성공 확인, 확정 실패 확인 (결과 불명이면 그대로 둔다)
         ALLOWED.put(PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED));
-        // 점주 픽업 준비 완료(N-02), 픽업 기한 경과(A4), 전액 환불 성공 확인(A9). 픽업 확인은 준비 완료를 거쳐야 한다(10/30 경우 결정)
-        ALLOWED.put(PAID, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED));
+        // 고객 픽업 신청(11/10), 픽업 기한 경과(A4), 전액 환불 성공 확인(A9). 준비 완료는 신청을 거쳐야 한다(11/10 경우 결정)
+        ALLOWED.put(PAID, EnumSet.of(PICKUP_REQUESTED, PICKUP_EXPIRED, REFUNDED));
+        // 점주 픽업 준비 완료(N-02), 픽업 기한 경과(A4), 전액 환불 성공 확인(A9)
+        ALLOWED.put(PICKUP_REQUESTED, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED));
         // 점주 픽업 확인(A5), 픽업 기한 경과(A4)
         ALLOWED.put(READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
         // 나머지는 끝난 상태라 어디로도 가지 않는다

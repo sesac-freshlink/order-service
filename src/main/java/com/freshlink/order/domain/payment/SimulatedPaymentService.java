@@ -5,6 +5,7 @@ import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.domain.order.Order;
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
+import com.freshlink.order.domain.order.PickupRequests;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -28,13 +29,15 @@ public class SimulatedPaymentService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentResultWriter resultWriter;
+    private final PickupRequests pickupRequests;
     private final Clock clock;
 
     public SimulatedPaymentService(OrderRepository orderRepository, PaymentRepository paymentRepository,
-                                   PaymentResultWriter resultWriter, Clock clock) {
+                                   PaymentResultWriter resultWriter, PickupRequests pickupRequests, Clock clock) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
         this.resultWriter = resultWriter;
+        this.pickupRequests = pickupRequests;
         this.clock = clock;
     }
 
@@ -43,7 +46,7 @@ public class SimulatedPaymentService {
     public PaymentConfirmResponse pay(Long orderId) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        if (order.getStatus() == OrderStatus.PAID) {
+        if (order.getStatus() == OrderStatus.PAID || order.getStatus() == OrderStatus.PICKUP_REQUESTED) {
             boolean simulated = paymentRepository.findByOrderId(orderId)
                     .map(p -> SimulatedPayments.isSimulated(p.getPaymentKey())).orElse(false);
             if (simulated) {
@@ -64,6 +67,10 @@ public class SimulatedPaymentService {
         Payment payment = paymentRepository.saveAndFlush(Payment.start(orderId,
                 SimulatedPayments.KEY_PREFIX + UUID.randomUUID(), UUID.randomUUID().toString(), order.getAmount()));
         resultWriter.paid(order, payment, SimulatedPayments.STATUS_DONE, SimulatedPayments.METHOD, null, now);
+        // 시뮬레이터에는 [픽업 신청]을 누를 사람이 없어 결제와 함께 신청한다. 시뮬레이터는 그대로 /ready를 부른다(11/10 결정)
+        if (order.getStatus() == OrderStatus.PAID) {
+            pickupRequests.requestIfPossible(order, now);
+        }
         log.info("시뮬레이터 결제 완료 orderId={} storeId={} amount={}", orderId, order.getStoreId(), order.getAmount());
         return PaymentConfirmResponse.from(order);
     }

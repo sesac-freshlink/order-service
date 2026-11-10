@@ -7,6 +7,7 @@ import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.domain.order.Order;
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
+import com.freshlink.order.domain.order.PickupRequests;
 import com.freshlink.order.domain.order.SalesChangedEvent;
 import java.time.Clock;
 import java.time.Instant;
@@ -41,8 +42,9 @@ class SimulatedPaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        PaymentResultWriter writer = new PaymentResultWriter(outboxWriter, "cmd.fifo", "noti", events);
-        service = new SimulatedPaymentService(orderRepository, paymentRepository, writer,
+        PickupRequests pickupRequests = new PickupRequests(outboxWriter, "noti");
+        PaymentResultWriter writer = new PaymentResultWriter(outboxWriter, "cmd.fifo", pickupRequests, events);
+        service = new SimulatedPaymentService(orderRepository, paymentRepository, writer, pickupRequests,
                 Clock.fixed(NOW.toInstant(), ZoneId.of("Asia/Seoul")));
         when(paymentRepository.saveAndFlush(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
     }
@@ -58,12 +60,15 @@ class SimulatedPaymentServiceTest {
     }
 
     @Test
-    void 결제_대기면_SIM_결제로_PAID와_CONFIRM_새주문알림_매출SSE() {
+    void 결제_대기면_SIM_결제로_결제와_함께_픽업_신청_CONFIRM_새주문알림_매출SSE() {
         Order order = waiting(7L, NOW.minusMinutes(1));
 
         PaymentConfirmResponse res = service.pay(7L);
 
-        assertThat(res.status()).isEqualTo(OrderStatus.PAID);
+        // 시뮬레이터에는 [픽업 신청]을 누를 사람이 없어 결제와 함께 신청한다(11/10). 기한은 오늘 23:59:59
+        assertThat(res.status()).isEqualTo(OrderStatus.PICKUP_REQUESTED);
+        assertThat(order.getPickupDeadline().toInstant())
+                .isEqualTo(OffsetDateTime.parse("2026-11-05T23:59:59+09:00").toInstant());
         assertThat(order.getPaidAt()).isEqualTo(NOW);
         ArgumentCaptor<Payment> payment = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).saveAndFlush(payment.capture());
@@ -95,7 +100,7 @@ class SimulatedPaymentServiceTest {
     }
 
     @Test
-    void 이미_SIM_결제로_PAID면_다시_불러도_그대로() {
+    void 이미_SIM_결제로_신청까지_됐으면_다시_불러도_그대로() {
         Order order = waiting(10L, NOW.minusMinutes(1));
         service.pay(10L);
         Payment sim = Payment.start(10L, "SIM-x", "t", 3800);
@@ -103,9 +108,10 @@ class SimulatedPaymentServiceTest {
 
         PaymentConfirmResponse again = service.pay(10L);
 
-        assertThat(again.status()).isEqualTo(OrderStatus.PAID);
+        assertThat(again.status()).isEqualTo(OrderStatus.PICKUP_REQUESTED);
         verify(paymentRepository).saveAndFlush(any()); // 처음 한 번만
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(outboxWriter).save(eq("noti"), any(NotificationMessage.class)); // 알림도 한 번만
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PICKUP_REQUESTED);
     }
 
     @Test

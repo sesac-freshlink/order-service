@@ -19,11 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerActiveOrdersController {
 
     /**
-     * 추가 명세 0.4 진행 중: 재고 확보 중·결제 대기·승인 중·결제 완료·픽업 준비 완료.
+     * 추가 명세 0.4 진행 중: 재고 확보 중·결제 대기·승인 중·결제 완료·픽업 신청됨(11/10)·픽업 준비 완료.
      * 환불 처리 중·확인 중·실패인 결제 완료 주문도 상태가 PAID라 여기 든다
      */
     static final Set<OrderStatus> ACTIVE = EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING,
-            OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP);
+            OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED, OrderStatus.READY_FOR_PICKUP);
 
     private final OrderRepository orderRepository;
 

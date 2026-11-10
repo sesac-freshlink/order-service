@@ -279,6 +279,37 @@ class RefundIntegrationTest {
     }
 
     @Test
+    void 픽업_신청한_주문도_고객과_점주가_취소하고_신청_주문의_환불_실패는_취소_환불_구분에_나온다() throws Exception {
+        long byCustomer = order("PICKUP_REQUESTED", TODAY_END, "NONE");
+        long byOwner = order("PICKUP_REQUESTED", TODAY_END, "NONE");
+        long failed = order("PICKUP_REQUESTED", TODAY_END, "FAILED");
+        tossCancels(TossCancelResult.canceled("CANCELED", CANCELED_AT));
+
+        customerCancel(customer, byCustomer, CUSTOMER_BODY).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REFUNDED"));
+        ownerCancel(store, byOwner, OWNER_BODY).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REFUNDED"));
+        assertThat(returnsOf(byCustomer)).hasSize(1);
+        assertThat(returnsOf(byOwner)).hasSize(1);
+
+        mockMvc.perform(get("/orders").param("tab", "PICKUP_WAITING")
+                        .header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"))
+                .andExpect(jsonPath("$.content.length()").value(0));
+        mockMvc.perform(get("/owner/orders").param("tab", "CANCELED")
+                        .header("X-User-Role", "OWNER").header("X-Store-Id", String.valueOf(store)))
+                .andExpect(jsonPath("$.content.length()").value(3));
+    }
+
+    @Test
+    void 준비_완료된_주문은_409_ORDER_NOT_CANCELABLE() throws Exception {
+        long ready = order("READY_FOR_PICKUP", TODAY_END, "NONE");
+
+        customerCancel(customer, ready, CUSTOMER_BODY).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_CANCELABLE"));
+        verify(toss, never()).cancel(anyString(), anyString(), anyString());
+    }
+
+    @Test
     void 다른_점포_주문은_403_고객_사유는_400_점주가_아니면_403() throws Exception {
         long id = paidOrder(TODAY_END);
 

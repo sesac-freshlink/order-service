@@ -110,10 +110,13 @@ class PickupPassIntegrationTest {
     // ---------------------------------------------------------------- OR-07 고객 QR
 
     @Test
-    void 미픽업_주문이_있으면_표와_6자리_코드를_5분짜리로_만든다() throws Exception {
+    void 준비_완료_주문이_있으면_표와_6자리_코드를_5분짜리로_만든다() throws Exception {
         String customer = UUID.randomUUID().toString();
-        order(customer, storeId(), "PAID", TODAY_END);
         order(customer, storeId(), "READY_FOR_PICKUP", TODAY_END);
+        order(customer, storeId(), "READY_FOR_PICKUP", TODAY_END);
+        // 결제 완료·픽업 신청됨은 QR에 묶지 않는다(11/10)
+        order(customer, storeId(), "PAID", TODAY_END);
+        order(customer, storeId(), "PICKUP_REQUESTED", TODAY_END);
 
         JsonNode pass = issued(customer);
         assertThat(pass.get("token").asText()).hasSize(32);
@@ -125,9 +128,11 @@ class PickupPassIntegrationTest {
     }
 
     @Test
-    void 미픽업_주문이_없거나_기한이_지났으면_409_고객이_아니면_403() throws Exception {
+    void 준비_완료_주문이_없거나_기한이_지났으면_409_고객이_아니면_403() throws Exception {
         String customer = UUID.randomUUID().toString();
         order(customer, storeId(), "PICKED_UP", TODAY_END);
+        order(customer, storeId(), "PAID", TODAY_END);
+        order(customer, storeId(), "PICKUP_REQUESTED", TODAY_END);
         order(customer, storeId(), "READY_FOR_PICKUP", NOW.minusDays(1));
         issue(customer).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_PICKUP_WAITING_ORDER"));
         mockMvc.perform(post("/orders/pickup-pass").header("X-User-Id", customer).header("X-User-Role", "OWNER"))
@@ -182,10 +187,11 @@ class PickupPassIntegrationTest {
     // ---------------------------------------------------------------- OR-10 목록
 
     @Test
-    void 목록은_그_고객의_이_점포_미픽업_주문만이고_준비_완료만_고를_수_있다() throws Exception {
+    void 목록은_그_고객의_이_점포_준비_완료_주문만이다() throws Exception {
         String customer = UUID.randomUUID().toString();
         long store = storeId();
-        long paid = order(customer, store, "PAID", TODAY_END);
+        order(customer, store, "PAID", TODAY_END);
+        order(customer, store, "PICKUP_REQUESTED", TODAY_END);
         long ready = order(customer, store, "READY_FOR_PICKUP", TODAY_END);
         order(customer, store, "PICKED_UP", TODAY_END);
         order(customer, store, "READY_FOR_PICKUP", NOW.minusDays(1));
@@ -196,12 +202,10 @@ class PickupPassIntegrationTest {
         for (String key : new String[] {pass.get("token").asText(), pass.get("code").asText()}) {
             list(store, key).andExpect(status().isOk())
                     .andExpect(jsonPath("$.token").value(pass.get("token").asText()))
-                    .andExpect(jsonPath("$.orders.length()").value(2))
-                    .andExpect(jsonPath("$.orders[0].orderId").value(paid))
-                    .andExpect(jsonPath("$.orders[0].selectable").value(false))
-                    .andExpect(jsonPath("$.orders[1].orderId").value(ready))
-                    .andExpect(jsonPath("$.orders[1].selectable").value(true))
-                    .andExpect(jsonPath("$.orders[1].productName").value("매운 컵라면 115g"));
+                    .andExpect(jsonPath("$.orders.length()").value(1))
+                    .andExpect(jsonPath("$.orders[0].orderId").value(ready))
+                    .andExpect(jsonPath("$.orders[0].selectable").value(true))
+                    .andExpect(jsonPath("$.orders[0].productName").value("매운 컵라면 115g"));
         }
     }
 
