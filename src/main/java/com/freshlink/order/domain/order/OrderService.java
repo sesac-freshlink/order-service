@@ -39,8 +39,11 @@ public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    /** 픽업 대기: 결제 완료와 픽업 준비 완료 (N-02) */
-    private static final Set<OrderStatus> PICKUP_WAITING = EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP);
+    /** 픽업 대기: 결제 완료·픽업 신청됨(11/10)·픽업 준비 완료(N-02) */
+    private static final Set<OrderStatus> PICKUP_WAITING = EnumSet.of(OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED,
+            OrderStatus.READY_FOR_PICKUP);
+    /** 목록에서 환불 상태로 나누는 상태: 결제 후 취소를 받는 결제 완료·픽업 신청됨 */
+    private static final Set<OrderStatus> REFUNDABLE = EnumSet.of(OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED);
 
     private final OrderRepository orderRepository;
     private final OrderLotRepository orderLotRepository;
@@ -50,6 +53,7 @@ public class OrderService {
     private final TransactionTemplate transactionTemplate;
     private final String commandsQueue;
     private final String notificationsQueue;
+    private final PickupRequests pickupRequests;
     private final Clock clock;
 
     public OrderService(OrderRepository orderRepository, OrderLotRepository orderLotRepository,
@@ -57,7 +61,8 @@ public class OrderService {
                         RefundRepository refundRepository, OutboxWriter outboxWriter,
                         TransactionTemplate transactionTemplate,
                         @Value("${app.queue.commands}") String commandsQueue,
-                        @Value("${app.queue.notifications}") String notificationsQueue, Clock clock) {
+                        @Value("${app.queue.notifications}") String notificationsQueue,
+                        PickupRequests pickupRequests, Clock clock) {
         this.orderRepository = orderRepository;
         this.orderLotRepository = orderLotRepository;
         this.paymentRepository = paymentRepository;
@@ -66,6 +71,7 @@ public class OrderService {
         this.transactionTemplate = transactionTemplate;
         this.commandsQueue = commandsQueue;
         this.notificationsQueue = notificationsQueue;
+        this.pickupRequests = pickupRequests;
         this.clock = clock;
     }
 
@@ -140,7 +146,8 @@ public class OrderService {
         if (order.getStatus() == OrderStatus.READY_FOR_PICKUP) {
             return order;
         }
-        if (order.getStatus() != OrderStatus.PAID || order.getRefundStatus() != RefundStatus.NONE) {
+        // 고객이 픽업 신청한 주문만 준비한다(11/10). 신청 전 결제 완료 주문도 409
+        if (order.getStatus() != OrderStatus.PICKUP_REQUESTED || order.getRefundStatus() != RefundStatus.NONE) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_READYABLE);
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
@@ -175,6 +182,33 @@ public class OrderService {
         }
         order.pickUp(now);
         log.info("픽업 완료 orderId={} storeId={}", orderId, storeId);
+        return order;
+    }
+
+    /**
+     * 고객 픽업 신청 (11/10 경우 결정). 본인 결제 완료·환불 NONE·기한 이내 주문만. 기한을 오늘(KST) 23:59:59로 당기고
+     * 점주에게 새 픽업 주문 알림을 보낸다. 행을 잠근 채 확인해 두 번 눌러도, 점주 준비 완료·취소·기한 스케줄러와 겹쳐도 한 번만 반영된다.
+     * 이미 신청했거나 준비 완료면 그대로 돌려준다(알림도 다시 보내지 않는다)
+     */
+    @Transactional
+    public Order requestPickup(String customerId, Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!order.getCustomerId().equals(customerId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_ACCESS_DENIED);
+        }
+        if (order.getStatus() == OrderStatus.PICKUP_REQUESTED || order.getStatus() == OrderStatus.READY_FOR_PICKUP) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.PAID || order.getRefundStatus() != RefundStatus.NONE) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_PICKUP_REQUESTABLE);
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (order.isPickupDeadlinePassed(now)) {
+            throw new BusinessException(OrderErrorCode.PICKUP_DEADLINE_PASSED);
+        }
+        pickupRequests.request(order, now);
+        log.info("픽업 신청 orderId={} storeId={} deadline={}", orderId, order.getStoreId(), order.getPickupDeadline());
         return order;
     }
 
@@ -229,7 +263,7 @@ public class OrderService {
                                                                      OrderPeriod period, OrderPageRequest paging) {
         PageRequest pageable = PageRequest.of(paging.page(), paging.size(),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-        Page<Order> page = orderRepository.findForCustomer(customerId, tab.statuses(), OrderStatus.PAID,
+        Page<Order> page = orderRepository.findForCustomer(customerId, tab.statuses(), REFUNDABLE,
                 tab.paidRefundStatuses(), period.start(), period.end(), pageable);
         Map<Long, List<OrderLot>> lots = lotsByOrder(page.getContent());
         return PageResponse.of(page, o -> CustomerOrderSummaryResponse.from(o, lots.get(o.getId())));
@@ -242,7 +276,7 @@ public class OrderService {
         if (tab.statuses().isEmpty()) {
             return PageResponse.empty(paging.page(), paging.size());
         }
-        Page<Order> page = orderRepository.findForStore(storeId, tab.statuses(), OrderStatus.PAID,
+        Page<Order> page = orderRepository.findForStore(storeId, tab.statuses(), REFUNDABLE,
                 tab.paidRefundStatuses(), period.start(), period.end(),
                 PageRequest.of(paging.page(), paging.size(), tab.sort()));
         if (page.isEmpty()) {

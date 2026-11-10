@@ -87,15 +87,16 @@ class SimulatedPaymentIntegrationTest {
     }
 
     @Test
-    void 결제_대기_주문을_토스_없이_PAID로_바꾸고_CONFIRM과_새주문알림을_남긴다() throws Exception {
+    void 결제_대기_주문을_토스_없이_결제하고_픽업_신청까지_CONFIRM과_새주문알림을_남긴다() throws Exception {
         long id = waitingOrder();
 
         mockMvc.perform(post("/ops/orders/" + id + "/simulated-payment"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(id))
-                .andExpect(jsonPath("$.status").value("PAID"));
+                .andExpect(jsonPath("$.status").value("PICKUP_REQUESTED"));
 
-        assertThat(orderRepository.findById(id).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        // 시뮬레이터는 신청 버튼을 누를 사람이 없어 결제와 함께 신청한다. 시뮬레이터는 그대로 /ready를 부른다(11/10)
+        assertThat(orderRepository.findById(id).orElseThrow().getStatus()).isEqualTo(OrderStatus.PICKUP_REQUESTED);
         Map<String, Object> payment = jdbc.queryForMap("SELECT * FROM payment WHERE order_id = ?", id);
         assertThat((String) payment.get("payment_key")).startsWith("SIM-");
         assertThat(payment).containsEntry("status", "DONE").containsEntry("method", "카드");
@@ -106,7 +107,7 @@ class SimulatedPaymentIntegrationTest {
         // 다시 불러도 그대로 (결제 기록 1건)
         mockMvc.perform(post("/ops/orders/" + id + "/simulated-payment"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("PAID"));
+                .andExpect(jsonPath("$.status").value("PICKUP_REQUESTED"));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE order_id = ?", Integer.class, id))
                 .isEqualTo(1);
         verify(toss, never()).confirm(anyString(), anyString(), org.mockito.ArgumentMatchers.anyLong(), anyString());

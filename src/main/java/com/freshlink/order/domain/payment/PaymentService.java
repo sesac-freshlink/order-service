@@ -33,7 +33,8 @@ public class PaymentService {
 
     /** 승인 처리가 이미 시작된 상태. 같은 paymentKey면 지금 상태를 돌려준다 */
     private static final Set<OrderStatus> APPROVAL_STARTED =
-            EnumSet.of(OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.PAYMENT_FAILED);
+            EnumSet.of(OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED,
+                    OrderStatus.PAYMENT_FAILED);
 
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;

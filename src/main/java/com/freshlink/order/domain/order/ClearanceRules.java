@@ -55,8 +55,12 @@ public final class ClearanceRules {
         if (!hasClearance) {
             return earliestExpiry;
         }
-        OffsetDateTime endOfDay = reservedAt.atZoneSameInstant(KST).toLocalDate()
-                .atTime(LocalTime.of(23, 59, 59)).atZone(KST).toOffsetDateTime();
+        OffsetDateTime endOfDay = endOfDay(reservedAt);
         return endOfDay.isBefore(earliestExpiry) ? endOfDay : earliestExpiry;
+    }
+
+    /** 그날(KST) 23:59:59. 당일 픽업(마감세일)과 픽업 신청 기한이 같이 쓴다 */
+    public static OffsetDateTime endOfDay(OffsetDateTime at) {
+        return at.atZoneSameInstant(KST).toLocalDate().atTime(LocalTime.of(23, 59, 59)).atZone(KST).toOffsetDateTime();
     }
 }

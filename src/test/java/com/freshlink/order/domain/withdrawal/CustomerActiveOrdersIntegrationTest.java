@@ -44,7 +44,8 @@ class CustomerActiveOrdersIntegrationTest {
     @Test
     void 진행_중_주문만_센다() throws Exception {
         String customer = UUID.randomUUID().toString();
-        for (String s : new String[] {"RESERVING", "PAYMENT_WAITING", "PAYMENT_APPROVING", "PAID", "READY_FOR_PICKUP"}) {
+        for (String s : new String[] {"RESERVING", "PAYMENT_WAITING", "PAYMENT_APPROVING", "PAID", "PICKUP_REQUESTED",
+                "READY_FOR_PICKUP"}) {
             order(customer, s, "NONE");
         }
         for (String s : new String[] {"OUT_OF_STOCK", "PAYMENT_FAILED", "EXPIRED", "CANCELED", "PICKED_UP",
@@ -52,7 +53,7 @@ class CustomerActiveOrdersIntegrationTest {
             order(customer, s, "NONE");
         }
         mockMvc.perform(get("/internal/customers/" + customer + "/active-orders"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.activeOrders").value(5));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.activeOrders").value(6));
     }
 
     @Test

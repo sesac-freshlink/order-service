@@ -30,8 +30,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class PickupPassService {
 
-    /** 미픽업 주문: 결제 완료·픽업 준비 완료이고 환불 NONE (고객 주문 내역 PICKUP_WAITING과 같다) */
-    static final Set<OrderStatus> WAITING = EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP);
+    /** QR로 받아 갈 주문: 픽업 준비 완료이고 환불 NONE (11/10 결정: 신청하고 준비된 주문만 QR에 묶는다) */
+    static final Set<OrderStatus> WAITING = EnumSet.of(OrderStatus.READY_FOR_PICKUP);
     /** 한 번에 승인할 수 있는 주문 수 */
     public static final int MAX_APPROVE = 20;
     private static final Pattern CODE = Pattern.compile("\\d{6}");
@@ -53,7 +53,7 @@ public class PickupPassService {
         this.clock = clock;
     }
 
-    /** 고객 QR 만들기. 기한이 남은 미픽업 주문이 없으면 409. 예전 QR은 지운다 */
+    /** 고객 QR 만들기. 기한이 남은 준비 완료 주문이 없으면 409. 예전 QR은 지운다 */
     public PickupPassResponse issue(String customerId) {
         OffsetDateTime now = OffsetDateTime.now(clock);
         long count = orderRepository

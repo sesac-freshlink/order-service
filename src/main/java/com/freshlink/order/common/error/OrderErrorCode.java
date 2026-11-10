@@ -30,6 +30,7 @@ public enum OrderErrorCode implements ErrorCode {
     REFUND_IN_PROGRESS(409, "취소·환불을 처리하고 있습니다"),
     // N-02 픽업 준비 완료 (API 명세에 아직 없음)
     ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다"),
+    ORDER_NOT_PICKUP_REQUESTABLE(409, "픽업 신청할 수 없는 주문입니다"),
     // 선착순 대기열 (API 명세에 아직 없음, 오픈런 문서 2장)
     FIRST_COME_QUANTITY_LIMIT(400, "선착순 상품은 1개만 주문할 수 있습니다"),
     FIRST_COME_CLEARANCE_NOT_ALLOWED(400, "선착순 상품은 마감세일로 살 수 없어요"),

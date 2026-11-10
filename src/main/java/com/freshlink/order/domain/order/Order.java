@@ -259,9 +259,28 @@ public class Order {
         return pickupDeadline != null && now.isAfter(pickupDeadline);
     }
 
-    /** N-02 점주 픽업 준비 완료: 결제 완료·환불 NONE이고 기한 이내일 때만. 되돌리기는 없다 */
+    /** 픽업 신청을 받을 수 있는지: 결제 완료·환불 NONE·기한 이내 */
+    public boolean canRequestPickup(OffsetDateTime now) {
+        return status == OrderStatus.PAID && refundStatus == RefundStatus.NONE && !isPickupDeadlinePassed(now);
+    }
+
+    /**
+     * 고객 픽업 신청 (11/10 경우 결정). "오늘 받아 가실 수 있게 준비해요"라서 기한을 신청한 날(KST) 23:59:59로 당긴다.
+     * 원래 기한(가장 빠른 lot 유통기한)이 더 빠르면 그대로 둔다. 되돌리기는 없다
+     */
+    public void requestPickup(OffsetDateTime now) {
+        if (!canRequestPickup(now)) {
+            throw new IllegalStateException("픽업 신청을 받을 수 없다: orderId=" + id + " status=" + status);
+        }
+        changeStatus(OrderStatus.PICKUP_REQUESTED);
+        this.pickupDeadline = pickupDeadline == null
+                ? ClearanceRules.endOfDay(now)
+                : ClearanceRules.pickupDeadline(pickupDeadline, now, true);
+    }
+
+    /** N-02 점주 픽업 준비 완료: 픽업 신청됨·환불 NONE이고 기한 이내일 때만. 되돌리기는 없다 */
     public void markReadyForPickup(OffsetDateTime now) {
-        if (status != OrderStatus.PAID || refundStatus != RefundStatus.NONE || isPickupDeadlinePassed(now)) {
+        if (status != OrderStatus.PICKUP_REQUESTED || refundStatus != RefundStatus.NONE || isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업 준비 완료로 바꿀 수 없다: orderId=" + id + " status=" + status);
         }
         changeStatus(OrderStatus.READY_FOR_PICKUP);
@@ -277,14 +296,15 @@ public class Order {
     }
 
     /**
-     * A4 픽업 기한 경과 (스케줄러). 결제 완료·픽업 준비 완료면 PICKUP_EXPIRED(환불·재고 복원 없음),
+     * A4 픽업 기한 경과 (스케줄러). 결제 완료·픽업 신청됨·픽업 준비 완료면 PICKUP_EXPIRED(환불·재고 복원 없음),
      * 결제 대기면 EXPIRED·사유 PICKUP_DEADLINE (재고는 부르는 쪽이 RELEASE로 돌려준다)
      */
     public void expirePickup(OffsetDateTime now) {
         if (!isPickupDeadlinePassed(now)) {
             throw new IllegalStateException("픽업 기한 전이다: orderId=" + id);
         }
-        if ((status == OrderStatus.PAID || status == OrderStatus.READY_FOR_PICKUP) && refundStatus == RefundStatus.NONE) {
+        if ((status == OrderStatus.PAID || status == OrderStatus.PICKUP_REQUESTED || status == OrderStatus.READY_FOR_PICKUP)
+                && refundStatus == RefundStatus.NONE) {
             changeStatus(OrderStatus.PICKUP_EXPIRED);
         } else if (status == OrderStatus.PAYMENT_WAITING) {
             changeStatus(OrderStatus.EXPIRED);
@@ -310,18 +330,24 @@ public class Order {
     }
 
     /**
-     * A8 취소 요청이 유효한지. 결제 완료이면서 처음 요청(환불 NONE·기한 이내)이거나 실패한 환불의 재신청(FAILED)이어야 한다.
+     * A8 취소 요청이 유효한지. 결제 완료·픽업 신청됨이면서 처음 요청(환불 NONE·기한 이내)이거나 실패한 환불의 재신청(FAILED)이어야 한다.
+     * 준비 완료 뒤에는 취소하지 않는다(10/31 경우 결정).
      * 기한 안에 시작한 환불은 FAILED여도 기한 뒤 재신청을 허용한다 (추가 명세 0.4, A9 픽업·환불 경합)
      */
     public boolean canStartRefund(OffsetDateTime now) {
-        if (status != OrderStatus.PAID) {
+        if (!isRefundable()) {
             return false;
         }
         return refundStatus == RefundStatus.FAILED
                 || (refundStatus == RefundStatus.NONE && !isPickupDeadlinePassed(now));
     }
 
-    /** A8 취소 요청: 환불 처리 중으로 바꾸고 요청 시각을 남긴다. 주문 상태는 PAID 그대로다 */
+    /** 결제 후 취소를 받는 상태: 결제 완료·픽업 신청됨 (11/10 결정) */
+    public boolean isRefundable() {
+        return status == OrderStatus.PAID || status == OrderStatus.PICKUP_REQUESTED;
+    }
+
+    /** A8 취소 요청: 환불 처리 중으로 바꾸고 요청 시각을 남긴다. 주문 상태는 그대로다(결제 완료·픽업 신청됨) */
     public void startRefund(OffsetDateTime now) {
         if (!canStartRefund(now)) {
             throw new IllegalStateException("환불을 시작할 수 없다: orderId=" + id + " status=" + status

@@ -106,8 +106,10 @@ class OrderHistoryIntegrationTest {
         long picked = order(me, store, "PICKED_UP", 2);
         long expired = order(me, store, "EXPIRED", 3);
         order(me, store, "PICKUP_EXPIRED", 4);
+        long requested = order(me, store, "PICKUP_REQUESTED", 5);
 
-        customerList(me, "?tab=PICKUP_WAITING").andExpect(jsonPath("$.content[*].orderId").value(contains((int) paid)));
+        customerList(me, "?tab=PICKUP_WAITING")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested, (int) paid)));
         customerList(me, "?tab=PICKED_UP").andExpect(jsonPath("$.content[*].orderId").value(contains((int) picked)));
         customerList(me, "?tab=CANCELED").andExpect(jsonPath("$.content[*].orderId").value(contains((int) expired)));
     }
@@ -197,11 +199,12 @@ class OrderHistoryIntegrationTest {
         long pickupExpired = order(c, store, "PICKUP_EXPIRED", 3);
         order(c, store, "EXPIRED", 4);
         order(c, storeId() + 1, "PAID", 7);   // 다른 점포
+        long requested = order(c, store, "PICKUP_REQUESTED", 8);
 
         mockMvc.perform(ownerList(store, "?tab=PICKUP_WAITING"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) paidNew, (int) paidOld)))
-                .andExpect(jsonPath("$.content[0].status").value("PAID"));
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested, (int) paidNew, (int) paidOld)))
+                .andExpect(jsonPath("$.content[0].status").value("PICKUP_REQUESTED"));
         mockMvc.perform(ownerList(store, "?tab=PICKED_UP"))
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedNew, (int) pickedOld)))
                 .andExpect(jsonPath("$.content[0].pickedUpAt").value("2026-10-20T10:08:00+09:00"));
