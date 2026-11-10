@@ -56,6 +56,10 @@ public class FirstComeOrderGate {
         if (request.quantity() != 1) {
             throw new BusinessException(OrderErrorCode.FIRST_COME_QUANTITY_LIMIT);
         }
+        if (request.clearanceQuantity() > 0) {
+            // 선착순 상품은 마감세일을 만들지 않는다 (마감세일 함께 사기, 11/6 이태우·김경우)
+            throw new BusinessException(OrderErrorCode.FIRST_COME_CLEARANCE_NOT_ALLOWED);
+        }
         Optional<Instant> ticket;
         try {
             if (firstComeService.alreadyOrdered(userId, key)) {

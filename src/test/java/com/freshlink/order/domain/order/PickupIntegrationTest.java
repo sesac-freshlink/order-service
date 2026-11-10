@@ -91,7 +91,8 @@ class PickupIntegrationTest {
         jdbc.update("UPDATE orders SET status = ?, pickup_deadline = ?, product_name = '매운 컵라면 115g', "
                         + "unit_price = 1700, amount = 3400, order_no = ?, paid_at = ?, payment_expires_at = ? WHERE id = ?",
                 status, deadline == null ? null : deadline.toLocalDateTime(), "FL-20261025-" + o.getId(),
-                "PAID".equals(status) || "READY_FOR_PICKUP".equals(status) ? NOW.minusHours(1).toLocalDateTime() : null,
+                "PAID".equals(status) || "PICKUP_REQUESTED".equals(status) || "READY_FOR_PICKUP".equals(status)
+                        ? NOW.minusHours(1).toLocalDateTime() : null,
                 "PAYMENT_WAITING".equals(status) ? NOW.plusMinutes(5).toLocalDateTime() : null, o.getId());
         return o.getId();
     }
@@ -295,6 +296,71 @@ class PickupIntegrationTest {
                 .andExpect(jsonPath("$.pickedUpAt").isEmpty());
     }
 
+    // ---------------------------------------------------------------- 픽업 신청 (11/10)
+
+    private ResultActions requestPickup(String customerId, long orderId) throws Exception {
+        return mockMvc.perform(post("/orders/" + orderId + "/pickup-request")
+                .header("X-User-Id", customerId).header("X-User-Role", "CUSTOMER"));
+    }
+
+    @Test
+    void 고객이_픽업_신청하면_신청됨_기한은_오늘_밤_점주_새주문_알림은_한_번() throws Exception {
+        long store = storeId();
+        long id = order(store, "PAID", TODAY_END.plusDays(3));
+        String customer = reload(id).getCustomerId();
+
+        requestPickup(customer, id).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PICKUP_REQUESTED"))
+                .andExpect(jsonPath("$.pickupDeadline").value("2026-10-25T23:59:59+09:00"));
+        // 두 번 눌러도 상태·알림은 한 번
+        requestPickup(customer, id).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PICKUP_REQUESTED"));
+
+        Order saved = reload(id);
+        assertThat(saved.getStatus()).isEqualTo(OrderStatus.PICKUP_REQUESTED);
+        assertThat(saved.getPickupDeadline().toInstant()).isEqualTo(TODAY_END.toInstant());
+        assertThat(notificationsOf(id)).singleElement().satisfies(m -> {
+            assertThat(m.kind()).isEqualTo(NotificationKind.NEW_ORDER);
+            assertThat(m.storeId()).isEqualTo(store);
+            assertThat(m.orderNo()).isEqualTo(saved.getOrderNo());
+        });
+    }
+
+    @Test
+    void 픽업_신청은_남의_주문_403_결제_전_409_기한_지남_409_환불_중_409_고객이_아니면_403() throws Exception {
+        long store = storeId();
+        long paid = order(store, "PAID", TODAY_END);
+        long waiting = order(store, "PAYMENT_WAITING", TODAY_END);
+        long past = order(store, "PAID", YESTERDAY_END);
+        long refunding = order(store, "PAID", TODAY_END);
+        jdbc.update("UPDATE orders SET refund_status = 'REQUESTED' WHERE id = ?", refunding);
+
+        requestPickup(UUID.randomUUID().toString(), paid).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ORDER_ACCESS_DENIED"));
+        requestPickup(reload(waiting).getCustomerId(), waiting).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_PICKUP_REQUESTABLE"));
+        requestPickup(reload(past).getCustomerId(), past).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PICKUP_DEADLINE_PASSED"));
+        requestPickup(reload(refunding).getCustomerId(), refunding).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_PICKUP_REQUESTABLE"));
+        requestPickup(UUID.randomUUID().toString(), 99_999_999L).andExpect(status().isNotFound());
+        mockMvc.perform(post("/orders/" + paid + "/pickup-request").header("X-User-Id", reload(paid).getCustomerId())
+                        .header("X-User-Role", "OWNER"))
+                .andExpect(status().isForbidden());
+        assertThat(reload(paid).getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(notificationsOf(paid)).isEmpty();
+        assertThat(notificationsOf(past)).isEmpty();
+    }
+
+    @Test
+    void 픽업_신청한_주문도_기한이_지나면_PICKUP_EXPIRED() {
+        long store = storeId();
+        long due = order(store, "PICKUP_REQUESTED", YESTERDAY_END);
+
+        pickupDeadlineService.expireDue();
+
+        assertThat(reload(due).getStatus()).isEqualTo(OrderStatus.PICKUP_EXPIRED);
+    }
+
     // ---------------------------------------------------------------- N-02 픽업 준비 완료
 
     private ResultActions ready(long storeId, long orderId) throws Exception {
@@ -311,9 +377,9 @@ class PickupIntegrationTest {
     }
 
     @Test
-    void 결제_완료_주문을_픽업_준비_완료로_바꾸면_고객에게_알림_쪽지가_한_번_남는다() throws Exception {
+    void 픽업_신청한_주문을_픽업_준비_완료로_바꾸면_고객에게_알림_쪽지가_한_번_남는다() throws Exception {
         long store = storeId();
-        long id = order(store, "PAID", TODAY_END);
+        long id = order(store, "PICKUP_REQUESTED", TODAY_END);
 
         ready(store, id).andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(id))
@@ -335,12 +401,15 @@ class PickupIntegrationTest {
     }
 
     @Test
-    void 준비_완료를_거치지_않은_결제_완료_주문은_픽업할_수_없다() throws Exception {
+    void 결제_완료는_신청_준비_완료를_거쳐야_픽업할_수_있다() throws Exception {
         long store = storeId();
         long id = order(store, "PAID", TODAY_END);
 
         pickup(store, id).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ORDER_NOT_PICKABLE"));
+        // 고객이 신청하기 전에는 점주가 준비 완료를 누를 수 없다(11/10)
+        ready(store, id).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ORDER_NOT_READYABLE"));
+        requestPickup(reload(id).getCustomerId(), id).andExpect(status().isOk());
         ready(store, id).andExpect(status().isOk());
         pickup(store, id).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PICKED_UP"));
     }
@@ -348,9 +417,9 @@ class PickupIntegrationTest {
     @Test
     void 준비_완료는_다른_점포_403_결제_전_409_기한_지남_409_점주가_아니면_403() throws Exception {
         long store = storeId();
-        long paid = order(store, "PAID", TODAY_END);
+        long paid = order(store, "PICKUP_REQUESTED", TODAY_END);
         long waiting = order(store, "PAYMENT_WAITING", TODAY_END);
-        long past = order(store, "PAID", YESTERDAY_END);
+        long past = order(store, "PICKUP_REQUESTED", YESTERDAY_END);
 
         ready(store + 1, paid).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("STORE_ORDER_ACCESS_DENIED"));

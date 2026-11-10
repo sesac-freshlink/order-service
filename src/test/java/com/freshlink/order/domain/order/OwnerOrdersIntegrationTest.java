@@ -88,6 +88,26 @@ class OwnerOrdersIntegrationTest {
                 .andExpect(jsonPath("$[1].payment.receiptUrl").isEmpty());
     }
 
+    @Test
+    void 목록의_각_주문에_마감세일과_기본_줄이_붙는다() throws Exception {
+        long store = storeId();
+        long id = order(store, "PAID", "2026-10-20 15:35:10", 3490L + 4990L);
+        jdbc.update("UPDATE orders SET quantity = 2, clearance_quantity = 1, unit_price = 4990 WHERE id = ?", id);
+        jdbc.update("INSERT INTO order_lot (order_id, lot_id, quantity, clearance, unit_price, expiry_at, created_at) "
+                + "VALUES (?, 101, 1, TRUE, 3490, '2026-10-20 23:59:59', NOW(6)), "
+                + "(?, 201, 1, FALSE, NULL, '2026-10-23 23:59:59', NOW(6))", id, id);
+
+        mockMvc.perform(get("/owner/orders").header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Role", "OWNER").header("X-Store-Id", String.valueOf(store)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].clearanceQuantity").value(1))
+                .andExpect(jsonPath("$[0].lines[0].clearance").value(true))
+                .andExpect(jsonPath("$[0].lines[0].unitPrice").value(3490))
+                .andExpect(jsonPath("$[0].lines[1].clearance").value(false))
+                .andExpect(jsonPath("$[0].lines[1].unitPrice").value(4990))
+                .andExpect(jsonPath("$[0].lines[1].amount").value(4990));
+    }
+
     /** OR-03이 남기는 승인 완료 결제 기록을 SQL로 넣는다. 승인 시각은 결제 완료 시각과 같다 */
     private void payment(long orderId, String receiptUrl) {
         jdbc.update("INSERT INTO payment (order_id, payment_key, toss_idempotency_key, amount, status, toss_status, "

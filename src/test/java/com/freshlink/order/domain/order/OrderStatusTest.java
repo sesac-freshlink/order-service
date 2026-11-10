@@ -22,7 +22,8 @@ class OrderStatusTest {
             RESERVING, EnumSet.of(PAYMENT_WAITING, OUT_OF_STOCK, EXPIRED),
             PAYMENT_WAITING, EnumSet.of(PAYMENT_APPROVING, EXPIRED, CANCELED),
             PAYMENT_APPROVING, EnumSet.of(PAID, PAYMENT_FAILED),
-            PAID, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED),
+            PAID, EnumSet.of(PICKUP_REQUESTED, PICKUP_EXPIRED, REFUNDED),
+            PICKUP_REQUESTED, EnumSet.of(READY_FOR_PICKUP, PICKUP_EXPIRED, REFUNDED),
             READY_FOR_PICKUP, EnumSet.of(PICKED_UP, PICKUP_EXPIRED));
 
     @Test
@@ -57,12 +58,69 @@ class OrderStatusTest {
     @Test
     void 픽업_완료한_주문은_기한이_지나도_PICKUP_EXPIRED로_가지_않는다() {
         Order order = paidOrder(NOW.plusHours(1));
+        order.requestPickup(NOW);
         order.markReadyForPickup(NOW);
         order.pickUp(NOW);
 
         assertThatThrownBy(() -> order.expirePickup(NOW.plusHours(2)))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(order.getStatus()).isEqualTo(PICKED_UP);
+    }
+
+    @Test
+    void 픽업_신청하면_기한을_신청한_날_23시59분59초로_당긴다() {
+        Order order = paidOrder(NOW.plusDays(3));
+
+        order.requestPickup(NOW);
+
+        assertThat(order.getStatus()).isEqualTo(PICKUP_REQUESTED);
+        assertThat(order.getPickupDeadline().toInstant())
+                .isEqualTo(OffsetDateTime.of(2026, 10, 30, 23, 59, 59, 0, ZoneOffset.ofHours(9)).toInstant());
+    }
+
+    @Test
+    void 원래_기한이_오늘_밤보다_빠르면_그대로_둔다() {
+        Order order = paidOrder(NOW.plusHours(3));
+
+        order.requestPickup(NOW);
+
+        assertThat(order.getPickupDeadline()).isEqualTo(NOW.plusHours(3));
+    }
+
+    @Test
+    void 픽업_신청은_결제_완료_환불_NONE_기한_이내에서만_받는다() {
+        Order passed = paidOrder(NOW.minusSeconds(1));
+        assertThatThrownBy(() -> passed.requestPickup(NOW)).isInstanceOf(IllegalStateException.class);
+        assertThat(passed.getStatus()).isEqualTo(PAID);
+
+        Order refunding = paidOrder(NOW.plusHours(1));
+        refunding.startRefund(NOW);
+        assertThat(refunding.canRequestPickup(NOW)).isFalse();
+
+        Order requested = paidOrder(NOW.plusHours(1));
+        requested.requestPickup(NOW);
+        assertThatThrownBy(() -> requested.requestPickup(NOW)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 준비_완료는_픽업_신청한_주문만_받는다() {
+        Order paid = paidOrder(NOW.plusHours(1));
+        assertThatThrownBy(() -> paid.markReadyForPickup(NOW)).isInstanceOf(IllegalStateException.class);
+        assertThat(paid.getStatus()).isEqualTo(PAID);
+
+        paid.requestPickup(NOW);
+        paid.markReadyForPickup(NOW);
+        assertThat(paid.getStatus()).isEqualTo(READY_FOR_PICKUP);
+    }
+
+    @Test
+    void 픽업_신청한_주문도_기한이_지나면_PICKUP_EXPIRED() {
+        Order order = paidOrder(NOW.plusHours(1));
+        order.requestPickup(NOW);
+
+        order.expirePickup(NOW.plusHours(2));
+
+        assertThat(order.getStatus()).isEqualTo(PICKUP_EXPIRED);
     }
 
     @Test

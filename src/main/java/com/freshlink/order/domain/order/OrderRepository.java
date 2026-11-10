@@ -28,28 +28,38 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                                                                                Collection<OrderStatus> statuses,
                                                                                RefundStatus refundStatus);
 
+    /** A13 픽업 QR: 고객의 그 상태들·환불 상태 주문, 결제 시각 오래된 순 (점포를 가리지 않는다) */
+    List<Order> findByCustomerIdAndStatusInAndRefundStatusOrderByPaidAtAscIdAsc(String customerId,
+                                                                             Collection<OrderStatus> statuses,
+                                                                             RefundStatus refundStatus);
+
+    /** A13 픽업 QR: 그 고객의 이 점포 주문 중 그 상태들·환불 상태, 결제 시각 오래된 순 */
+    List<Order> findByCustomerIdAndStoreIdAndStatusInAndRefundStatusOrderByPaidAtAscIdAsc(String customerId, Long storeId,
+                                                                                       Collection<OrderStatus> statuses,
+                                                                                       RefundStatus refundStatus);
+
     /**
-     * A3 고객 주문 내역: 본인 주문 중 그 상태들(PAID는 그 환불 상태들만), 만든 시각 start 이상 end 미만,
+     * A3 고객 주문 내역: 본인 주문 중 그 상태들(결제 완료·픽업 신청됨은 그 환불 상태들만), 만든 시각 start 이상 end 미만,
      * 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5)
      */
     @Query("select o from Order o where o.customerId = :customerId and o.status in :statuses"
-            + " and (o.status <> :paid or o.refundStatus in :paidRefundStatuses)"
+            + " and (o.status not in :refundable or o.refundStatus in :paidRefundStatuses)"
             + " and o.createdAt >= :start and o.createdAt < :end")
     Page<Order> findForCustomer(@Param("customerId") String customerId,
-                                @Param("statuses") Collection<OrderStatus> statuses, @Param("paid") OrderStatus paid,
+                                @Param("statuses") Collection<OrderStatus> statuses, @Param("refundable") Collection<OrderStatus> refundable,
                                 @Param("paidRefundStatuses") Collection<RefundStatus> paidRefundStatuses,
                                 @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end,
                                 Pageable pageable);
 
     /**
-     * A6 점주 주문 목록: 그 점포 주문 중 그 상태들(PAID는 그 환불 상태들만), 만든 시각 start 이상 end 미만,
+     * A6 점주 주문 목록: 그 점포 주문 중 그 상태들(결제 완료·픽업 신청됨은 그 환불 상태들만), 만든 시각 start 이상 end 미만,
      * 정렬·페이지는 pageable (인덱스 idx_orders_store_status_paid 앞부분)
      */
     @Query("select o from Order o where o.storeId = :storeId and o.status in :statuses"
-            + " and (o.status <> :paid or o.refundStatus in :paidRefundStatuses)"
+            + " and (o.status not in :refundable or o.refundStatus in :paidRefundStatuses)"
             + " and o.createdAt >= :start and o.createdAt < :end")
     Page<Order> findForStore(@Param("storeId") Long storeId,
-                             @Param("statuses") Collection<OrderStatus> statuses, @Param("paid") OrderStatus paid,
+                             @Param("statuses") Collection<OrderStatus> statuses, @Param("refundable") Collection<OrderStatus> refundable,
                              @Param("paidRefundStatuses") Collection<RefundStatus> paidRefundStatuses,
                              @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end,
                              Pageable pageable);
@@ -97,4 +107,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             + " and o.closedAt >= :start and o.closedAt < :end")
     List<OffsetDateTime> findClosedAtForStore(@Param("storeId") Long storeId, @Param("status") OrderStatus status,
                                               @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
+
+    /** A14 회원탈퇴: 고객의 진행 중 주문 수 (추가 명세 0.4: 진행 중 상태들) */
+    long countByCustomerIdAndStatusIn(String customerId, Collection<OrderStatus> statuses);
 }

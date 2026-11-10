@@ -125,6 +125,20 @@ public class OrderController {
     }
 
     /**
+     * 고객 픽업 신청 (11/10): "오늘 받아 갈게요". 본인 결제 완료 주문만, 기한을 오늘 23:59(KST)로 당기고 점주에게 알린다.
+     * 이미 신청했거나 준비 완료면 그대로 돌려준다. 신청할 수 없는 상태면 409 ORDER_NOT_PICKUP_REQUESTABLE, 기한이 지났으면 409
+     */
+    @PostMapping("/{orderId}/pickup-request")
+    public OrderResponse requestPickup(
+            @PathVariable Long orderId,
+            @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
+        requireCustomer(userId, role);
+        orderService.requestPickup(userId, orderId);
+        return orderService.getDetail(userId, orderId);
+    }
+
+    /**
      * A8 고객 결제 후 취소: 본인 PAID·환불 NONE·픽업 기한 이내 주문을 전체 취소·전액 환불한다(점주 승인 없음).
      * 환불이 실패(FAILED)한 주문은 같은 주소로 다시 신청한다(사유는 새로 받는다). 결과는 refundStatus로 알린다
      */

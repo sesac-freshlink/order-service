@@ -30,12 +30,20 @@ public enum OrderErrorCode implements ErrorCode {
     REFUND_IN_PROGRESS(409, "취소·환불을 처리하고 있습니다"),
     // N-02 픽업 준비 완료 (API 명세에 아직 없음)
     ORDER_NOT_READYABLE(409, "픽업 준비 완료로 바꿀 수 없는 주문입니다"),
+    ORDER_NOT_PICKUP_REQUESTABLE(409, "픽업 신청할 수 없는 주문입니다"),
     // 선착순 대기열 (API 명세에 아직 없음, 오픈런 문서 2장)
     FIRST_COME_QUANTITY_LIMIT(400, "선착순 상품은 1개만 주문할 수 있습니다"),
+    FIRST_COME_CLEARANCE_NOT_ALLOWED(400, "선착순 상품은 마감세일로 살 수 없어요"),
+    CLEARANCE_NOT_ON_SALE(400, "마감세일은 06:00~23:00에만 살 수 있어요"),
     NOT_FIRST_COME(404, "선착순 상품이 아닙니다"),
     FIRST_COME_TICKET_REQUIRED(409, "차례가 오면 주문할 수 있습니다. 대기 화면에서 순서를 기다려 주세요"),
     FIRST_COME_ALREADY_ORDERED(409, "이미 주문한 선착순 상품입니다"),
-    FIRST_COME_UNAVAILABLE(503, "선착순 대기열을 지금 쓸 수 없습니다. 잠시 후 다시 시도해 주세요");
+    FIRST_COME_UNAVAILABLE(503, "선착순 대기열을 지금 쓸 수 없습니다. 잠시 후 다시 시도해 주세요"),
+    // 픽업 QR (추가 명세 A16)
+    NO_PICKUP_WAITING_ORDER(409, "받아 갈 주문이 없습니다"),
+    PICKUP_PASS_NOT_FOUND(404, "QR이 만료됐거나 없습니다. 고객에게 새 QR을 보여 달라고 해 주세요"),
+    PICKUP_CODE_TOO_MANY_ATTEMPTS(429, "코드를 너무 많이 틀렸습니다. 1분 뒤 다시 시도해 주세요"),
+    PICKUP_PASS_UNAVAILABLE(503, "픽업 QR을 지금 쓸 수 없습니다. 잠시 후 다시 시도해 주세요");
 
     private final int status;
     private final String message;

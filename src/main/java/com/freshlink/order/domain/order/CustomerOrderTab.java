@@ -12,16 +12,19 @@ import java.util.Set;
  */
 public enum CustomerOrderTab {
 
-    /** 픽업 대기: 결제 완료·환불 NONE과 픽업 준비 완료(N-02) */
-    PICKUP_WAITING(EnumSet.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP), EnumSet.of(RefundStatus.NONE)),
+    /** 픽업 대기: 결제 완료·픽업 신청됨(환불 NONE)과 픽업 준비 완료(N-02) */
+    PICKUP_WAITING(EnumSet.of(OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED, OrderStatus.READY_FOR_PICKUP),
+            EnumSet.of(RefundStatus.NONE)),
     /** 픽업 완료 */
     PICKED_UP(EnumSet.of(OrderStatus.PICKED_UP), EnumSet.allOf(RefundStatus.class)),
     /** 취소·환불: 결제 전 만료(결제 시간·픽업 기한)·고객 취소(A7), 환불 완료(REFUNDED), 환불 처리·확인·실패 주문 */
-    CANCELED(EnumSet.of(OrderStatus.EXPIRED, OrderStatus.CANCELED, OrderStatus.REFUNDED, OrderStatus.PAID),
+    CANCELED(EnumSet.of(OrderStatus.EXPIRED, OrderStatus.CANCELED, OrderStatus.REFUNDED, OrderStatus.PAID,
+            OrderStatus.PICKUP_REQUESTED),
             EnumSet.of(RefundStatus.REQUESTED, RefundStatus.CHECKING, RefundStatus.FAILED)),
     /** 전체: 위 주문과 진행 중 주문, 결제 뒤 기한 경과(PICKUP_EXPIRED). 이 구분에만 기한 경과가 나온다 */
     ALL(EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING, OrderStatus.PAYMENT_APPROVING,
-            OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP, OrderStatus.EXPIRED,
+            OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP,
+            OrderStatus.EXPIRED,
             OrderStatus.PICKUP_EXPIRED, OrderStatus.CANCELED, OrderStatus.REFUNDED), EnumSet.allOf(RefundStatus.class));
 
     private final Set<OrderStatus> statuses;

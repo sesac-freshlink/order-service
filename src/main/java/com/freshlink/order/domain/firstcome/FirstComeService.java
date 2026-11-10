@@ -40,7 +40,8 @@ public class FirstComeService {
      * 실패·만료·취소·환불(진행 중 포함)된 주문은 세지 않는다. 입장권 없이 산 예전 일반 주문도 세지 않는다
      */
     static final Set<OrderStatus> HOLDING = EnumSet.of(OrderStatus.RESERVING, OrderStatus.PAYMENT_WAITING,
-            OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PICKED_UP,
+            OrderStatus.PAYMENT_APPROVING, OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED, OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.PICKED_UP,
             OrderStatus.PICKUP_EXPIRED);
 
     private final FirstComeQueue queue;

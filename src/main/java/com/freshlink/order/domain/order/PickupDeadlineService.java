@@ -29,7 +29,7 @@ public class PickupDeadlineService {
     /** 한 차례에 꺼내 보는 묶음 수 상한 (실패가 많아도 한 차례가 끝없이 길어지지 않게) */
     static final int MAX_PAGES = 10;
     private static final Set<OrderStatus> TARGETS =
-            Set.of(OrderStatus.PAID, OrderStatus.READY_FOR_PICKUP, OrderStatus.PAYMENT_WAITING);
+            Set.of(OrderStatus.PAID, OrderStatus.PICKUP_REQUESTED, OrderStatus.READY_FOR_PICKUP, OrderStatus.PAYMENT_WAITING);
 
     private final OrderRepository orderRepository;
     private final OutboxWriter outboxWriter;

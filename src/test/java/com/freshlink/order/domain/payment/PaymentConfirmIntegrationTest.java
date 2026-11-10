@@ -196,18 +196,36 @@ class PaymentConfirmIntegrationTest {
         ConfirmMessage msg = MessageJson.fromJson(confirms.get(0), ConfirmMessage.class);
         assertThat(msg.storeId()).isEqualTo(1L);
         assertThat(outboxPayloads("RELEASE")).isEmpty();
-        // N-02: 같은 트랜잭션에 점주 새 픽업 주문 알림이 하나 남는다
-        List<String> notifications = outboxPayloads("NOTIFICATION");
-        assertThat(notifications).hasSize(1);
-        NotificationMessage newOrder = MessageJson.fromJson(notifications.get(0), NotificationMessage.class);
-        assertThat(newOrder.kind()).isEqualTo(NotificationKind.NEW_ORDER);
-        assertThat(newOrder.storeId()).isEqualTo(1L);
-        assertThat(newOrder.userId()).isNull();
-        assertThat(newOrder.orderNo()).isEqualTo(order.getOrderNo());
-        assertThat(newOrder.productName()).isEqualTo("매운 컵라면 115g");
-        assertThat(newOrder.quantity()).isEqualTo(2);
+        // 점주 새 픽업 주문 알림은 결제 때가 아니라 고객이 픽업 신청할 때 간다(11/10)
+        assertThat(outboxPayloads("NOTIFICATION")).isEmpty();
         // 커밋 뒤 매출 SSE가 그 점포의 오늘 합계를 다시 보낸다
         verify(salesStream).onSalesChanged(new SalesChangedEvent(1L));
+    }
+
+    @Test
+    void 마감세일이_섞인_주문은_결제와_함께_픽업_신청되고_점주_새주문_알림이_간다() throws Exception {
+        Order o = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(),
+                1L, "프레시 강남점", 15L, 2, 1));
+        jdbc.update("UPDATE orders SET order_no = ? WHERE id = ?", "FL-20261020-" + o.getId(), o.getId());
+        OffsetDateTime expiry = OffsetDateTime.parse("2026-10-25T23:59:59+09:00");
+        reservationResultHandler.handle(ReservedMessage.of(o.getId(), 1L, 15L, "매운 컵라면 115g", 2, 1700L,
+                List.of(ReservedLot.clearance(101L, 1, expiry, 1190L), new ReservedLot(102L, 1, expiry))));
+        Order clearance = orderRepository.findById(o.getId()).orElseThrow();
+        assertThat(clearance.getAmount()).isEqualTo(2890L);
+        tossReturns(TossConfirmResult.approved("DONE", "카드", APPROVED_AT, RECEIPT));
+
+        confirm(customer, clearance.getId(), body("pk_clearance", clearance.getOrderNo(), 2890))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PICKUP_REQUESTED"));
+
+        assertThat(statusOf(clearance)).isEqualTo(OrderStatus.PICKUP_REQUESTED);
+        List<NotificationMessage> notifications = jdbc.queryForList(
+                        "SELECT payload FROM outbox WHERE message_type = 'NOTIFICATION'", String.class).stream()
+                .map(p -> MessageJson.fromJson(p, NotificationMessage.class))
+                .filter(n -> n.orderId() == clearance.getId())
+                .toList();
+        assertThat(notifications).singleElement()
+                .satisfies(n -> assertThat(n.kind()).isEqualTo(NotificationKind.NEW_ORDER));
     }
 
     @Test

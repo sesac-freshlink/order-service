@@ -3,9 +3,9 @@ package com.freshlink.order.domain.payment;
 import com.freshlink.common.message.command.ConfirmMessage;
 import com.freshlink.common.message.command.ReleaseMessage;
 import com.freshlink.common.message.command.ReleaseReason;
-import com.freshlink.common.message.notification.NotificationMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.domain.order.Order;
+import com.freshlink.order.domain.order.PickupRequests;
 import com.freshlink.order.domain.order.SalesChangedEvent;
 import java.time.OffsetDateTime;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,20 +21,20 @@ public class PaymentResultWriter {
 
     private final OutboxWriter outboxWriter;
     private final String commandsQueue;
-    private final String notificationsQueue;
+    private final PickupRequests pickupRequests;
     private final ApplicationEventPublisher events;
 
     public PaymentResultWriter(OutboxWriter outboxWriter, @Value("${app.queue.commands}") String commandsQueue,
-                               @Value("${app.queue.notifications}") String notificationsQueue,
-                               ApplicationEventPublisher events) {
+                               PickupRequests pickupRequests, ApplicationEventPublisher events) {
         this.outboxWriter = outboxWriter;
         this.commandsQueue = commandsQueue;
-        this.notificationsQueue = notificationsQueue;
+        this.pickupRequests = pickupRequests;
         this.events = events;
     }
 
     /**
-     * PAID + CONFIRM + 점주 새 픽업 주문 알림(N-02, NotificationMessage.newOrder)을 한 트랜잭션에 저장한다.
+     * PAID + CONFIRM을 한 트랜잭션에 저장한다. 점주 새 픽업 주문 알림은 고객이 픽업 신청할 때 간다(11/10).
+     * 마감세일이 섞인 주문은 당일 픽업이라 결제와 함께 자동으로 신청하고 그때 알림이 간다.
      * 커밋 뒤 매출 SSE가 그 점포 점주 화면에 오늘 합계를 보낸다
      */
     public void paid(Order order, Payment payment, String tossStatus, String method, String receiptUrl,
@@ -42,8 +42,9 @@ public class PaymentResultWriter {
         order.markPaid(paidAt);
         payment.approve(tossStatus, method, paidAt, receiptUrl);
         outboxWriter.save(commandsQueue, ConfirmMessage.of(order.getId(), order.getStoreId()));
-        outboxWriter.save(notificationsQueue, NotificationMessage.newOrder(order.getStoreId(), order.getId(),
-                order.getOrderNo(), order.getProductId(), order.getProductName(), order.getQuantity()));
+        if (order.getClearanceQuantity() > 0) {
+            pickupRequests.requestIfPossible(order, paidAt);
+        }
         events.publishEvent(new SalesChangedEvent(order.getStoreId()));
     }
 

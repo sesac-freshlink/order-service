@@ -3,8 +3,9 @@ package com.freshlink.order.domain.order;
 import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
-/** A3 고객 주문 내역 한 줄 (추가 명세 A3 표시 항목 + 픽업 기한 + 환불 상태). 시각은 +09:00 */
+/** A3 고객 주문 내역 한 줄 (추가 명세 A3 표시 항목 + 픽업 기한 + 환불 상태 + 마감세일 줄). 시각은 +09:00 */
 public record CustomerOrderSummaryResponse(
         Long orderId,
         String orderNo,
@@ -13,7 +14,9 @@ public record CustomerOrderSummaryResponse(
         String storeName,
         String productName,
         int quantity,
+        int clearanceQuantity,
         Long amount,
+        List<OrderLineResponse> lines,
         OffsetDateTime createdAt,
         OffsetDateTime pickupDeadline,
         RefundStatus refundStatus
@@ -22,9 +25,15 @@ public record CustomerOrderSummaryResponse(
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     public static CustomerOrderSummaryResponse from(Order order) {
+        return from(order, List.of());
+    }
+
+    /** lots는 그 주문의 order_lot (목록은 주문 id 묶음으로 한 번에 읽어 넘긴다) */
+    public static CustomerOrderSummaryResponse from(Order order, List<OrderLot> lots) {
         return new CustomerOrderSummaryResponse(order.getId(), order.getOrderNo(), order.getStatus(),
                 order.getFailureReason(), order.getStoreName(), order.getProductName(), order.getQuantity(),
-                order.getAmount(), kst(order.getCreatedAt()), kst(order.getPickupDeadline()), order.getRefundStatus());
+                order.getClearanceQuantity(), order.getAmount(), OrderLineResponse.from(order, lots),
+                kst(order.getCreatedAt()), kst(order.getPickupDeadline()), order.getRefundStatus());
     }
 
     private static OffsetDateTime kst(OffsetDateTime time) {
