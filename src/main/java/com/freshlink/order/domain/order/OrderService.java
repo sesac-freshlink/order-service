@@ -257,14 +257,18 @@ public class OrderService {
                 .toList();
     }
 
-    /** A3 고객 주문 내역: 본인 주문을 구분별·기간별로, 주문일시 최신순 */
+    /**
+     * A3 고객 주문 내역: 본인 주문을 구분별·기간별로, 주문일시 최신순.
+     * keyword(11/11)는 상품명 검색 LIKE 패턴(OrderKeyword.likePattern 결과), 없으면 null
+     */
     @Transactional(readOnly = true)
     public PageResponse<CustomerOrderSummaryResponse> listForCustomer(String customerId, CustomerOrderTab tab,
-                                                                     OrderPeriod period, OrderPageRequest paging) {
+                                                                     OrderPeriod period, String keyword,
+                                                                     OrderPageRequest paging) {
         PageRequest pageable = PageRequest.of(paging.page(), paging.size(),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
         Page<Order> page = orderRepository.findForCustomer(customerId, tab.statuses(), REFUNDABLE,
-                tab.paidRefundStatuses(), period.start(), period.end(), pageable);
+                tab.paidRefundStatuses(), period.start(), period.end(), keyword, pageable);
         Map<Long, List<OrderLot>> lots = lotsByOrder(page.getContent());
         return PageResponse.of(page, o -> CustomerOrderSummaryResponse.from(o, lots.get(o.getId())));
     }

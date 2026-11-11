@@ -40,15 +40,18 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     /**
      * A3 고객 주문 내역: 본인 주문 중 그 상태들(결제 완료·픽업 신청됨은 그 환불 상태들만), 만든 시각 start 이상 end 미만,
-     * 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5)
+     * 상품명 검색(11/11): keyword(OrderKeyword.likePattern, 소문자·이스케이프 끝난 %…%)가 있으면 상품명에 들어 있는 주문만.
+     * 정렬·페이지는 pageable (인덱스 idx_orders_customer_created, V5. 그 고객 주문으로 좁힌 뒤 상품명을 거른다)
      */
     @Query("select o from Order o where o.customerId = :customerId and o.status in :statuses"
             + " and (o.status not in :refundable or o.refundStatus in :paidRefundStatuses)"
-            + " and o.createdAt >= :start and o.createdAt < :end")
+            + " and o.createdAt >= :start and o.createdAt < :end"
+            + " and (:keyword is null or lower(o.productName) like :keyword escape '!')")
     Page<Order> findForCustomer(@Param("customerId") String customerId,
                                 @Param("statuses") Collection<OrderStatus> statuses, @Param("refundable") Collection<OrderStatus> refundable,
                                 @Param("paidRefundStatuses") Collection<RefundStatus> paidRefundStatuses,
                                 @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end,
+                                @Param("keyword") String keyword,
                                 Pageable pageable);
 
     /**

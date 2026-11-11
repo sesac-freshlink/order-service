@@ -73,7 +73,8 @@ public class OrderController {
 
     /**
      * A3 고객 주문 내역: tab = PICKUP_WAITING·PICKED_UP·CANCELED·ALL(기본), page(0부터)·size(10·20·50, 기본 20).
-     * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택. 탭과 같이 쓴다
+     * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택. 탭과 같이 쓴다.
+     * q(11/11)는 상품명 일부(앞뒤 공백 빼고 50자까지, 대소문자 구분 없음). 비우면 조건 없음, 50자 넘으면 400
      */
     @GetMapping
     public PageResponse<CustomerOrderSummaryResponse> list(
@@ -82,11 +83,12 @@ public class OrderController {
             @RequestParam(required = false) Integer size,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
+            @RequestParam(required = false) String q,
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
         requireCustomer(userId, role);
         return orderService.listForCustomer(userId, OrderPageRequest.tab(CustomerOrderTab.class, tab),
-                OrderPeriod.of(from, to), OrderPageRequest.of(page, size));
+                OrderPeriod.of(from, to), OrderKeyword.likePattern(q), OrderPageRequest.of(page, size));
     }
 
     /** OR-02 주문 조회: 본인 주문만 */

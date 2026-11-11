@@ -61,6 +61,13 @@ class OrderHistoryIntegrationTest {
         return o.getId();
     }
 
+    /** 상품명을 바꾼 주문 (A3 상품명 검색 테스트용) */
+    private long named(String customer, long storeId, String status, int minutes, String productName) {
+        long id = order(customer, storeId, status, minutes);
+        jdbc.update("UPDATE orders SET product_name = ? WHERE id = ?", productName, id);
+        return id;
+    }
+
     private ResultActions customerList(String customer, String query) throws Exception {
         return mockMvc.perform(get("/orders" + query)
                 .header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"));
@@ -112,6 +119,71 @@ class OrderHistoryIntegrationTest {
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested, (int) paid)));
         customerList(me, "?tab=PICKED_UP").andExpect(jsonPath("$.content[*].orderId").value(contains((int) picked)));
         customerList(me, "?tab=CANCELED").andExpect(jsonPath("$.content[*].orderId").value(contains((int) expired)));
+    }
+
+    @Test
+    void 고객_상품명_검색은_상품명_일부가_들어_있는_본인_주문만_대소문자_없이_찾는다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long milk = named(me, store, "PAID", 1, "바나나우유 240ml");
+        long jersey = named(me, store, "PICKED_UP", 2, "JERSEY 우유 푸딩");
+        named(me, store, "PICKED_UP", 3, "삼각김밥 참치마요");
+        named(UUID.randomUUID().toString(), store, "PAID", 4, "흰 우유 500ml");   // 다른 고객
+
+        search(me, "", "  우유 ")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) jersey, (int) milk)))
+                .andExpect(jsonPath("$.totalElements").value(2));
+        search(me, "", "jersey").andExpect(jsonPath("$.content[*].orderId").value(contains((int) jersey)));
+    }
+
+    @Test
+    void 고객_상품명_검색어가_비면_전체이고_구분_기간과_같이_쓴다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long paidMilk = named(me, store, "PAID", 1, "바나나우유 240ml");
+        long pickedMilk = named(me, store, "PICKED_UP", 2, "흰 우유 500ml");
+        long gimbap = named(me, store, "PICKED_UP", 3, "삼각김밥 참치마요");
+
+        search(me, "", "   ").andExpect(jsonPath("$.totalElements").value(3));
+        search(me, "?tab=PICKED_UP", "우유")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedMilk)));
+        search(me, "?from=2026-10-20&to=2026-10-20", "우유")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedMilk, (int) paidMilk)));
+        search(me, "?from=2026-10-21", "우유").andExpect(jsonPath("$.totalElements").value(0));
+        search(me, "", "김밥").andExpect(jsonPath("$.content[*].orderId").value(contains((int) gimbap)));
+    }
+
+    @Test
+    void 고객_상품명_검색어의_퍼센트_밑줄_느낌표는_글자_그대로_찾는다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long percent = named(me, store, "PAID", 1, "할인 30% 도시락");
+        long underscore = named(me, store, "PAID", 2, "a_b 샌드위치");
+        long bang = named(me, store, "PAID", 3, "대박! 김밥");
+        named(me, store, "PAID", 4, "할인 300 도시락");
+        named(me, store, "PAID", 5, "axb 샌드위치");
+
+        search(me, "", "30%").andExpect(jsonPath("$.content[*].orderId").value(contains((int) percent)));
+        search(me, "", "a_b").andExpect(jsonPath("$.content[*].orderId").value(contains((int) underscore)));
+        search(me, "", "대박!").andExpect(jsonPath("$.content[*].orderId").value(contains((int) bang)));
+        search(me, "", "%").andExpect(jsonPath("$.content[*].orderId").value(contains((int) percent)));
+    }
+
+    @Test
+    void 고객_상품명_검색어가_50자를_넘으면_400() throws Exception {
+        String me = UUID.randomUUID().toString();
+        search(me, "", "가".repeat(50)).andExpect(status().isOk());
+        search(me, "", "가".repeat(51))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("q: 50자 이하여야 합니다"));
+    }
+
+    /** 상품명 검색어 q 는 param 으로 넘긴다(% 같은 글자를 MockMvc 가 알맞게 인코딩하게) */
+    private ResultActions search(String customer, String query, String q) throws Exception {
+        return mockMvc.perform(get("/orders" + query).param("q", q)
+                .header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"));
     }
 
     @Test
