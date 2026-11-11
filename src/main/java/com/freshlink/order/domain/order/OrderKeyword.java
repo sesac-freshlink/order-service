@@ -5,7 +5,7 @@ import com.freshlink.order.common.error.OrderErrorCode;
 import java.util.Locale;
 
 /**
- * A3 고객 주문 내역 상품명 검색어 q (11/11). 앞뒤 공백을 빼고 50자까지 받는다. 비우면 조건이 없다.
+ * A3 고객 주문 내역 상품명 검색어 q (11/11). 앞뒤 공백을 빼고 50자(코드포인트, 이모지도 1자)까지 받는다. 비우면 조건이 없다.
  * 상품명 일부가 들어 있으면 맞는 주문이다(대소문자 구분 없음). LIKE 특수문자(% _)와 이스케이프 문자(!)는
  * 글자 그대로 찾도록 앞에 ! 를 붙인다. 50자를 넘으면 400 VALIDATION_ERROR
  */
@@ -28,7 +28,8 @@ public final class OrderKeyword {
         if (trimmed.isEmpty()) {
             return null;
         }
-        if (trimmed.length() > MAX_LENGTH) {
+        // 글자 수는 코드포인트로 센다(이모지 하나를 1자로). String.length()는 이모지를 2로 센다
+        if (trimmed.codePointCount(0, trimmed.length()) > MAX_LENGTH) {
             throw new BusinessException(OrderErrorCode.VALIDATION_ERROR, "q: " + MAX_LENGTH + "자 이하여야 합니다");
         }
         String escaped = trimmed.replace("!", "!!").replace("%", "!%").replace("_", "!_");

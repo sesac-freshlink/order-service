@@ -180,6 +180,17 @@ class OrderHistoryIntegrationTest {
                 .andExpect(jsonPath("$.message").value("q: 50자 이하여야 합니다"));
     }
 
+    @Test
+    void 고객_상품명_검색어_50자는_이모지도_한_글자로_센다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        String emoji = "\uD83C\uDF4C";   // 🍌 (UTF-16 로는 2칸)
+        search(me, "", emoji.repeat(26)).andExpect(status().isOk());
+        search(me, "", emoji.repeat(50)).andExpect(status().isOk());
+        search(me, "", emoji.repeat(25) + "가".repeat(26))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
     /** 상품명 검색어 q 는 param 으로 넘긴다(% 같은 글자를 MockMvc 가 알맞게 인코딩하게) */
     private ResultActions search(String customer, String query, String q) throws Exception {
         return mockMvc.perform(get("/orders" + query).param("q", q)
