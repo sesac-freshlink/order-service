@@ -133,6 +133,21 @@ public class OwnerOrderController {
     }
 
     /**
+     * 점주 하루 상품별 매출(하루 보기·매출 날짜 창, 11/14): 그날(KST, date=yyyy-MM-dd 필수) 결제 승인된 주문을 상품별로 더하고
+     * 그날 환불 완료분을 뺀다. 상품마다 팔린 수량·그중 마감세일 수량·매출 금액(실제 결제 금액, 마감세일 할인 반영). 많이 팔린 순
+     */
+    @GetMapping("/sales/products")
+    public SalesProductsResponse salesProducts(
+            @RequestParam(required = false) String date,
+            @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
+            @RequestHeader(name = AuthHeaders.STORE_ID, required = false) String storeIdHeader) {
+        if (!AuthHeaders.hasRole(role, AuthHeaders.ROLE_OWNER)) {
+            throw new BusinessException(OrderErrorCode.FORBIDDEN);
+        }
+        return salesService.products(parseStoreId(storeIdHeader), SalesPeriod.day(date));
+    }
+
+    /**
      * 실시간 매출 SSE: 연결하면 내 점포의 오늘(KST) 합계를 한 번 보내고, 결제가 완료될 때마다 다시 보낸다.
      * 이벤트 이름 sales, data {date, paidAmount, paidCount}. 20초마다 빈 이벤트(heartbeat)
      *
