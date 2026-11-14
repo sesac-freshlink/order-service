@@ -55,7 +55,7 @@ class OrderHistoryIntegrationTest {
         jdbc.update("UPDATE orders SET status = ?, created_at = ?, product_name = '매운 컵라면 115g', unit_price = 1700, "
                         + "amount = 3400, order_no = ?, paid_at = ?, picked_up_at = ?, pickup_deadline = ? WHERE id = ?",
                 status, at.toLocalDateTime(), "FL-20261020-" + o.getId(),
-                status.equals("PAID") || status.startsWith("PICK") ? at.plusMinutes(1).toLocalDateTime() : null,
+                status.equals("PAID") || status.startsWith("PICK") || status.equals("READY_FOR_PICKUP") ? at.plusMinutes(1).toLocalDateTime() : null,
                 status.equals("PICKED_UP") ? at.plusMinutes(2).toLocalDateTime() : null,
                 at.plusDays(2).toLocalDateTime(), o.getId());
         return o.getId();
@@ -283,16 +283,25 @@ class OrderHistoryIntegrationTest {
         order(c, store, "EXPIRED", 4);
         order(c, storeId() + 1, "PAID", 7);   // 다른 점포
         long requested = order(c, store, "PICKUP_REQUESTED", 8);
+        long ready = order(c, store, "READY_FOR_PICKUP", 9);
 
         mockMvc.perform(ownerList(store, "?tab=PICKUP_WAITING"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested, (int) paidNew, (int) paidOld)))
-                .andExpect(jsonPath("$.content[0].status").value("PICKUP_REQUESTED"));
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) ready, (int) requested, (int) paidNew, (int) paidOld)))
+                .andExpect(jsonPath("$.content[1].status").value("PICKUP_REQUESTED"));
         mockMvc.perform(ownerList(store, "?tab=PICKED_UP"))
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedNew, (int) pickedOld)))
                 .andExpect(jsonPath("$.content[0].pickedUpAt").value("2026-10-20T10:08:00+09:00"));
         mockMvc.perform(ownerList(store, "?tab=PICKUP_EXPIRED"))
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickupExpired)));
+        // 11/15: 픽업 신청·준비 완료를 따로 보는 구분과 전체 (PICKUP_WAITING 은 예전 화면을 위해 그대로)
+        mockMvc.perform(ownerList(store, "?tab=PICKUP_REQUESTED"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested)));
+        mockMvc.perform(ownerList(store, "?tab=READY_FOR_PICKUP"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) ready)));
+        mockMvc.perform(ownerList(store, "?tab=ALL"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) ready, (int) requested,
+                        (int) pickedNew, (int) paidNew, (int) pickupExpired, (int) pickedOld, (int) paidOld)));
         // 취소·환불은 환불(A7~A9) 전이라 비어 있다. 결제 전 만료(EXPIRED)는 점주 목록에 넣지 않는다
         mockMvc.perform(ownerList(store, "?tab=CANCELED"))
                 .andExpect(status().isOk())
@@ -315,7 +324,7 @@ class OrderHistoryIntegrationTest {
     @Test
     void 점주_모르는_구분이나_잘못된_페이지는_400() throws Exception {
         long store = storeId();
-        mockMvc.perform(ownerList(store, "?tab=ALL"))
+        mockMvc.perform(ownerList(store, "?tab=NOPE"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         mockMvc.perform(ownerList(store, "?tab=PICKED_UP&size=0")).andExpect(status().isBadRequest());
