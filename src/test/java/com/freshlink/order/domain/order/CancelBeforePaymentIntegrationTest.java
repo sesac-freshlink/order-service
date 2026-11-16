@@ -37,6 +37,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class CancelBeforePaymentIntegrationTest {
 
+    /** 같은 고객의 열린 주문이 겹치지 않게 주문마다 다른 상품 번호를 쓴다 (V10 uk_orders_open) */
+    private long nextProduct = 1_000L;
+
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
     /** 10/25 15:00 KST */
     private static final OffsetDateTime NOW = OffsetDateTime.of(2026, 10, 25, 15, 0, 0, 0, KST);
@@ -64,7 +67,7 @@ class CancelBeforePaymentIntegrationTest {
     /** 상태·결제 마감·픽업 기한을 SQL로 맞춘 주문 (3400원) */
     private long order(String status, OffsetDateTime paymentExpiresAt, OffsetDateTime deadline) {
         Order o = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(),
-                store, "프레시 강남점", 15L, 2));
+                store, "프레시 강남점", nextProduct++, 2));
         jdbc.update("UPDATE orders SET status = ?, payment_expires_at = ?, pickup_deadline = ?, "
                         + "product_name = '매운 컵라면 115g', unit_price = 1700, amount = 3400, order_no = ? WHERE id = ?",
                 status, paymentExpiresAt.toLocalDateTime(), deadline.toLocalDateTime(), "FL-20261025-" + o.getId(),
