@@ -6,6 +6,7 @@ import com.freshlink.order.common.web.AuthHeaders;
 import com.freshlink.order.domain.refund.CancelRequest;
 import com.freshlink.order.domain.refund.CancelResponse;
 import com.freshlink.order.domain.refund.RefundService;
+import io.swagger.v3.oas.annotations.Operation;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,6 +40,7 @@ public class OwnerOrderController {
     }
 
     /** OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때 */
+    @Operation(summary = "OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때")
     @GetMapping(params = "!tab")
     public List<OwnerOrderResponse> list(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
@@ -55,6 +57,7 @@ public class OwnerOrderController {
      * 같은 주소에 tab을 붙이면 페이지 응답이 온다. tab이 없으면 위 MVP 응답(배열) 그대로라 예전 화면도 깨지지 않는다.
      * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택이고 tab과 같이 쓴다
      */
+    @Operation(summary = "A6 점주 주문 목록 (OR-04 확장): tab = PICKUP_WAITING·PICKED_UP·CANCELED·PICKUP_EXPIRED, page(0부터)·size(10·20·50). 같은 주소에 tab을 붙이면 페이지 응답이 온다. tab이 없으면 위 MVP 응답(배열) 그대로라 예전 화면도 깨지지 않는다. from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택이고 tab과 같이 쓴다")
     @GetMapping(params = "tab")
     public PageResponse<OwnerOrderResponse> listByTab(
             @RequestParam String tab,
@@ -73,6 +76,7 @@ public class OwnerOrderController {
     }
 
     /** N-02 점주 픽업 준비 완료 (기한 이내 결제 완료 주문만). 고객에게 픽업 준비 완료 알림이 간다 */
+    @Operation(summary = "N-02 점주 픽업 준비 완료 (기한 이내 결제 완료 주문만). 고객에게 픽업 준비 완료 알림이 간다")
     @PostMapping("/{orderId}/ready")
     public PickupResponse markReady(
             @PathVariable Long orderId,
@@ -85,6 +89,7 @@ public class OwnerOrderController {
     }
 
     /** A5 점주 픽업 확인 (기한 이내 픽업 준비 완료 주문만) */
+    @Operation(summary = "A5 점주 픽업 확인 (기한 이내 픽업 준비 완료 주문만)")
     @PostMapping("/{orderId}/pickup")
     public PickupResponse pickUp(
             @PathVariable Long orderId,
@@ -100,6 +105,7 @@ public class OwnerOrderController {
      * A8 점주 결제 후 취소: 자기 점포의 픽업 대기(PAID·환불 NONE·기한 이내) 주문을 전체 취소·전액 환불한다.
      * 환불이 실패(FAILED)한 주문은 같은 주소로 다시 시도한다. 결과는 refundStatus로 알린다
      */
+    @Operation(summary = "A8 점주 결제 후 취소: 자기 점포의 픽업 대기(PAID·환불 NONE·기한 이내) 주문을 전체 취소·전액 환불한다. 환불이 실패(FAILED)한 주문은 같은 주소로 다시 시도한다. 결과는 refundStatus로 알린다")
     @PostMapping("/{orderId}/cancel")
     public CancelResponse cancel(
             @PathVariable Long orderId,
@@ -119,6 +125,7 @@ public class OwnerOrderController {
      * 점주 매출 대시보드: 내 점포의 기간별 결제·환불 금액, 순매출, 결제·환불·취소 건수.
      * from·to는 KST 날짜 yyyy-MM-dd(필수, 둘 다 포함, 최대 366일), unit = day(기본)·week(월요일 시작)·month
      */
+    @Operation(summary = "점주 매출 대시보드: 내 점포의 기간별 결제·환불 금액, 순매출, 결제·환불·취소 건수. from·to는 KST 날짜 yyyy-MM-dd(필수, 둘 다 포함, 최대 366일), unit = day(기본)·week(월요일 시작)·month")
     @GetMapping("/sales")
     public SalesResponse sales(
             @RequestParam(required = false) String from,
@@ -136,6 +143,7 @@ public class OwnerOrderController {
      * 점주 하루 상품별 매출(하루 보기·매출 날짜 창, 11/14): 그날(KST, date=yyyy-MM-dd 필수) 결제 승인된 주문을 상품별로 더하고
      * 그날 환불 완료분을 뺀다. 상품마다 팔린 수량·그중 마감세일 수량·매출 금액(실제 결제 금액, 마감세일 할인 반영). 많이 팔린 순
      */
+    @Operation(summary = "점주 하루 상품별 매출(하루 보기·매출 날짜 창, 11/14): 그날(KST, date=yyyy-MM-dd 필수) 결제 승인된 주문을 상품별로 더하고 그날 환불 완료분을 뺀다. 상품마다 팔린 수량·그중 마감세일 수량·매출 금액(실제 결제 금액, 마감세일 할인 반영). 많이 팔린 순")
     @GetMapping("/sales/products")
     public SalesProductsResponse salesProducts(
             @RequestParam(required = false) String date,
@@ -154,6 +162,7 @@ public class OwnerOrderController {
      * <p>점주가 아니거나 점포가 없으면 본문 없이 403만 준다. 브라우저 EventSource는 Accept가 text/event-stream뿐이라
      * 공통 오류 응답(JSON)을 쓸 수 없고(쓰려 하면 500이 된다), 403이면 다시 연결하지 않고 멈춘다.
      */
+    @Operation(summary = "실시간 매출 SSE: 연결하면 내 점포의 오늘(KST) 합계를 한 번 보내고, 결제가 완료될 때마다 다시 보낸다. 이벤트 이름 sales, data {date, paidAmount, paidCount}. 20초마다 빈 이벤트(heartbeat) 점주가 아니거나 점포가 없으면 본문 없이 403만 준다. 브라우저 EventSource는 Accept가 text/event-stream뿐이라 공통 오류 응답(JSON)을 쓸 수 없고(쓰려 하면 500이 된다), 403이면 다시 연결하지 않고 멈춘다.")
     @GetMapping(path = "/sales/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> salesStream(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,

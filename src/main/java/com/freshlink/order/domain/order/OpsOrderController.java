@@ -2,6 +2,7 @@ package com.freshlink.order.domain.order;
 
 import com.freshlink.order.domain.payment.PaymentSyncResponse;
 import com.freshlink.order.domain.payment.PaymentSyncService;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,12 +25,14 @@ public class OpsOrderController {
     }
 
     /** OP-01 결제 결과 수동 확인 */
+    @Operation(summary = "OP-01 결제 결과 수동 확인")
     @PostMapping("/{orderId}/payment-sync")
     public PaymentSyncResponse syncPayment(@PathVariable Long orderId) {
         return paymentSyncService.sync(orderId);
     }
 
     /** OP-02 멈춘 주문 수동 종료 */
+    @Operation(summary = "OP-02 멈춘 주문 수동 종료")
     @PostMapping("/{orderId}/close")
     public OrderCloseResponse close(@PathVariable Long orderId) {
         return orderCloseService.close(orderId);

@@ -2,6 +2,8 @@ package com.freshlink.order.domain.withdrawal;
 
 import com.freshlink.order.domain.order.OrderRepository;
 import com.freshlink.order.domain.order.OrderStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.EnumSet;
 import java.util.Set;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,8 @@ public class CustomerActiveOrdersController {
         this.orderRepository = orderRepository;
     }
 
+    /** OR-12 회원탈퇴 연동: 고객의 진행 중 주문 수 (내부 API, member-service만 부른다) */
+    @Operation(summary = "OR-12 회원탈퇴 연동: 고객의 진행 중 주문 수 (내부 API, member-service만 부른다)")
     @GetMapping("/{customerId}/active-orders")
     @Transactional(readOnly = true)
     public ActiveOrdersResponse activeOrders(@PathVariable String customerId) {
@@ -38,6 +42,7 @@ public class CustomerActiveOrdersController {
     }
 
     /** 진행 중 주문 수. 0이면 탈퇴할 수 있다 */
+    @Schema(description = "진행 중 주문 수. 0이면 탈퇴할 수 있다")
     public record ActiveOrdersResponse(long activeOrders) {
     }
 }

@@ -1,5 +1,6 @@
 package com.freshlink.order.domain.firstcome;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 
 /**
@@ -12,6 +13,7 @@ import java.time.OffsetDateTime;
  * @param ticketExpiresAt 입장권 만료 시각 (ADMITTED일 때만). 이때까지 [주문하기]를 눌러야 한다
  * @param serverTime      서버 현재 시각 (화면이 남은 시간을 셀 때 쓴다)
  */
+@Schema(description = "줄 서기·내 순번 응답.")
 public record QueueStatusResponse(
         Long storeId,
         Long productId,

@@ -1,10 +1,12 @@
 package com.freshlink.order.domain.order;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.function.Function;
 import org.springframework.data.domain.Page;
 
 /** 목록 한 페이지 (member-service 관리자 목록과 같은 모양). page는 0부터 */
+@Schema(description = "목록 한 페이지 (member-service 관리자 목록과 같은 모양). page는 0부터")
 public record PageResponse<T>(List<T> content, int page, int size, long totalElements, int totalPages) {
 
     public static <E, T> PageResponse<T> of(Page<E> page, Function<E, T> mapper) {
