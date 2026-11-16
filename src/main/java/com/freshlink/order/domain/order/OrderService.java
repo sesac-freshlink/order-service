@@ -76,7 +76,7 @@ public class OrderService {
     }
 
     /**
-     * OR-01 주문 생성. 같은 (고객, 키) 재요청은 새로 만들지 않는다.
+     * OR-01 주문 생성. 같은 (고객, 키) 재요청은 새로 만들지 않는다. 같은 고객·점포·상품의 열린 주문이 있으면 409 ORDER_ALREADY_PENDING.
      * 바깥에 트랜잭션을 두지 않는다: 동시 요청이 유니크 키에 걸려도 롤백이 끝난 뒤 새 조회로 먼저 만든 주문을 읽기 위해서다
      */
     public CreateOrderResult create(String customerId, String key, CreateOrderRequest req) {
@@ -92,11 +92,25 @@ public class OrderService {
             log.info("주문 생성 orderId={} storeId={} created=true", order.getId(), order.getStoreId());
             return new CreateOrderResult(order, true);
         } catch (DataIntegrityViolationException e) {
-            // 동시 요청이 먼저 커밋했다. 다른 제약 위반이면 그대로 던진다
-            Order existing = orderRepository.findByCustomerIdAndRequestId(customerId, key)
-                    .orElseThrow(() -> e);
-            return replay(existing, req);
+            // 같은 키 동시 요청이 먼저 커밋했으면 그 주문을 돌려준다(두 제약에 함께 걸릴 수 있어 키부터 본다)
+            Optional<Order> existing = orderRepository.findByCustomerIdAndRequestId(customerId, key);
+            if (existing.isPresent()) {
+                return replay(existing.get(), req);
+            }
+            // 같은 고객·점포·상품의 열린 주문(확인 중·결제 대기)이 이미 있다(V10 uk_orders_open, 11/15)
+            if (violates(e, OPEN_ORDER_CONSTRAINT)) {
+                throw new BusinessException(OrderErrorCode.ORDER_ALREADY_PENDING);
+            }
+            throw e;
         }
+    }
+
+    /** V10 열린 주문 한 건 제약 이름 */
+    static final String OPEN_ORDER_CONSTRAINT = "uk_orders_open";
+
+    private static boolean violates(DataIntegrityViolationException e, String constraint) {
+        String message = e.getMostSpecificCause().getMessage();
+        return message != null && message.contains(constraint);
     }
 
     /** OR-02 주문 조회. 없으면 404, 남의 주문이면 403 (명세 순서) */

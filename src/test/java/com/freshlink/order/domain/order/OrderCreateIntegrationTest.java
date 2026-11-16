@@ -1,6 +1,8 @@
 package com.freshlink.order.domain.order;
 
+import com.freshlink.common.error.BusinessException;
 import com.freshlink.common.message.MessageJson;
+import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.common.message.command.ReserveMessage;
 import com.freshlink.common.outbox.OutboxWriter;
 import com.freshlink.order.TestcontainersConfiguration;
@@ -11,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -214,6 +217,82 @@ class OrderCreateIntegrationTest {
                 assertThat(a.order().getId()).isEqualTo(b.order().getId());
                 assertThat(orderCount(customer)).isEqualTo(1);
                 assertThat(outboxCount(a.order().getId())).isEqualTo(1);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    // ---------------------------------------------------------------- 열린 주문 한 건 (V10, 11/15)
+
+    private void setStatus(String customer, String status) {
+        jdbc.update("UPDATE orders SET status = ? WHERE customer_id = ?", status, customer);
+    }
+
+    @Test
+    void 같은_고객_점포_상품에_결제하지_않은_주문이_있으면_다른_키라도_409_ORDER_ALREADY_PENDING() throws Exception {
+        String customer = uuid();
+        mockMvc.perform(req(customer, uuid(), body(7, 10, 2))).andExpect(status().isCreated());
+        // 수량이 달라도 막는다(P4)
+        mockMvc.perform(req(customer, uuid(), body(7, 10, 1)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_ALREADY_PENDING"));
+        setStatus(customer, "PAYMENT_WAITING");
+        mockMvc.perform(req(customer, uuid(), body(7, 10, 2)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_ALREADY_PENDING"));
+        assertThat(orderCount(customer)).isEqualTo(1);
+    }
+
+    @Test
+    void 앞_주문이_끝났거나_승인_중이면_다시_만들_수_있다() throws Exception {
+        for (String closed : new String[] {"EXPIRED", "CANCELED", "OUT_OF_STOCK", "PAYMENT_APPROVING", "PAID"}) {
+            String customer = uuid();
+            mockMvc.perform(req(customer, uuid(), body(7, 10, 2))).andExpect(status().isCreated());
+            setStatus(customer, closed);
+            mockMvc.perform(req(customer, uuid(), body(7, 10, 2))).andExpect(status().isCreated());
+            assertThat(orderCount(customer)).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void 다른_상품이나_다른_점포나_다른_고객은_막지_않는다() throws Exception {
+        String customer = uuid();
+        mockMvc.perform(req(customer, uuid(), body(7, 10, 2))).andExpect(status().isCreated());
+        mockMvc.perform(req(customer, uuid(), body(7, 11, 2))).andExpect(status().isCreated());
+        mockMvc.perform(req(customer, uuid(), body(8, 10, 2))).andExpect(status().isCreated());
+        mockMvc.perform(req(uuid(), uuid(), body(7, 10, 2))).andExpect(status().isCreated());
+        assertThat(orderCount(customer)).isEqualTo(3);
+    }
+
+    @Test
+    void 두_탭에서_다른_키로_동시에_눌러도_주문은_한_건만_생기고_나머지는_ORDER_ALREADY_PENDING() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            for (int i = 0; i < 10; i++) {
+                String customer = uuid();
+                CreateOrderRequest request = new CreateOrderRequest(7L, "프레시마트 강남점", 10L, 2);
+                CountDownLatch start = new CountDownLatch(1);
+                List<Future<CreateOrderResult>> futures = List.of(
+                        pool.submit(() -> { start.await(); return orderService.create(customer, uuid(), request); }),
+                        pool.submit(() -> { start.await(); return orderService.create(customer, uuid(), request); }));
+                start.countDown();
+
+                int created = 0;
+                int pending = 0;
+                for (Future<CreateOrderResult> f : futures) {
+                    try {
+                        if (f.get().created()) created++;
+                    } catch (ExecutionException e) {
+                        assertThat(e.getCause()).isInstanceOf(BusinessException.class);
+                        assertThat(((BusinessException) e.getCause()).errorCode())
+                                .isEqualTo(OrderErrorCode.ORDER_ALREADY_PENDING);
+                        pending++;
+                    }
+                }
+                assertThat(created).isEqualTo(1);
+                assertThat(pending).isEqualTo(1);
+                assertThat(orderCount(customer)).isEqualTo(1);
             }
         } finally {
             pool.shutdownNow();

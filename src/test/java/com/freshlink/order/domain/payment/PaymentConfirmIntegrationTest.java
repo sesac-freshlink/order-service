@@ -204,6 +204,8 @@ class PaymentConfirmIntegrationTest {
 
     @Test
     void 마감세일이_섞인_주문은_결제와_함께_픽업_신청되고_점주_새주문_알림이_간다() throws Exception {
+        // setUp의 결제 대기 주문과 같은 고객·상품이면 열린 주문이 겹쳐(V10) 새 고객으로 만든다
+        customer = UUID.randomUUID().toString();
         Order o = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(),
                 1L, "프레시 강남점", 15L, 2, 1));
         jdbc.update("UPDATE orders SET order_no = ? WHERE id = ?", "FL-20261020-" + o.getId(), o.getId());
@@ -298,6 +300,8 @@ class PaymentConfirmIntegrationTest {
     @Test
     void 결과_불명_이미_처리_연동_오류면_승인_중으로_남고_쪽지가_없다() throws Exception {
         for (TossOutcome outcome : List.of(TossOutcome.UNKNOWN, TossOutcome.ALREADY_PROCESSED, TossOutcome.CONFIG_ERROR)) {
+            // 같은 고객·상품의 열린 주문은 한 건뿐이라(V10) 시도마다 새 고객으로 만든다
+            customer = UUID.randomUUID().toString();
             order = waitingOrder(customer);
             tossReturns(TossConfirmResult.error(outcome, "SOME_CODE", "메시지"));
 
@@ -454,6 +458,8 @@ class PaymentConfirmIntegrationTest {
 
     @Test
     void 결제할_수_없는_상태면_409_ORDER_NOT_PAYABLE() throws Exception {
+        // setUp의 결제 대기 주문과 같은 고객·상품이면 열린 주문이 겹쳐(V10) 새 고객으로 만든다
+        customer = UUID.randomUUID().toString();
         Order reserving = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(),
                 1L, "점포", 15L, 2));
         jdbc.update("UPDATE orders SET order_no = ? WHERE id = ?", "FL-20261020-" + reserving.getId(), reserving.getId());
