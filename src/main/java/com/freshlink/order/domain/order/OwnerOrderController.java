@@ -40,7 +40,8 @@ public class OwnerOrderController {
     }
 
     /** OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때 */
-    @Operation(summary = "OR-04 점주 신규 주문 목록 (MVP 그대로: 결제 완료 주문 배열, 페이지 없음). tab이 없을 때")
+    // tab 있음·없음 두 메서드가 같은 주소라 Swagger에서 한 API로 합쳐진다. 설명은 여기 하나에 둘 다 적는다
+    @Operation(summary = "OR-04·A6 점주 주문 목록. tab이 없으면 결제 완료 주문 배열(페이지 없음, MVP 그대로). tab(ALL·PICKUP_WAITING·PICKUP_REQUESTED·READY_FOR_PICKUP·PICKED_UP·CANCELED·PICKUP_EXPIRED)을 붙이면 페이지 응답: page(0부터)·size(10·20·50), from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택")
     @GetMapping(params = "!tab")
     public List<OwnerOrderResponse> list(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
@@ -57,7 +58,6 @@ public class OwnerOrderController {
      * 같은 주소에 tab을 붙이면 페이지 응답이 온다. tab이 없으면 위 MVP 응답(배열) 그대로라 예전 화면도 깨지지 않는다.
      * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택이고 tab과 같이 쓴다
      */
-    @Operation(summary = "A6 점주 주문 목록 (OR-04 확장): tab = PICKUP_WAITING·PICKED_UP·CANCELED·PICKUP_EXPIRED, page(0부터)·size(10·20·50). 같은 주소에 tab을 붙이면 페이지 응답이 온다. tab이 없으면 위 MVP 응답(배열) 그대로라 예전 화면도 깨지지 않는다. from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택이고 tab과 같이 쓴다")
     @GetMapping(params = "tab")
     public PageResponse<OwnerOrderResponse> listByTab(
             @RequestParam String tab,
