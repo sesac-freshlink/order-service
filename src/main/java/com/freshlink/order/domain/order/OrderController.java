@@ -11,6 +11,7 @@ import com.freshlink.order.domain.refund.CancelRequest;
 import com.freshlink.order.domain.refund.CancelResponse;
 import com.freshlink.order.domain.refund.RefundService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -51,6 +52,8 @@ public class OrderController {
      * 선착순 상품이면 입장권이 있어야 하고 1개만 살 수 있다(FirstComeOrderGate). 주문을 만들지 못하면 입장권을 되돌린다
      */
     @Operation(summary = "OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200. 선착순 상품이면 입장권이 있어야 하고 1개만 살 수 있다(FirstComeOrderGate). 주문을 만들지 못하면 입장권을 되돌린다")
+    @ApiResponse(responseCode = "201", description = "새 주문을 만들었다")
+    @ApiResponse(responseCode = "200", description = "같은 요청 번호로 이미 만든 주문을 그대로 돌려준다")
     @PostMapping
     public ResponseEntity<CreateOrderResponse> create(
             @RequestHeader(name = AuthHeaders.IDEMPOTENCY_KEY, required = false) String idempotencyKey,

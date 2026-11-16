@@ -4,6 +4,7 @@ import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.common.web.AuthHeaders;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,6 +57,7 @@ public class FirstComeQueueController {
 
     /** 그만 기다리기 */
     @Operation(summary = "그만 기다리기")
+    @ApiResponse(responseCode = "204", description = "줄에서 빠졌다")
     @DeleteMapping("/{productId}/me")
     public ResponseEntity<Void> leave(
             @PathVariable Long productId,
