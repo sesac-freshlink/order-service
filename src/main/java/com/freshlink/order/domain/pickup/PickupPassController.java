@@ -3,6 +3,8 @@ package com.freshlink.order.domain.pickup;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.common.web.AuthHeaders;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,6 +35,7 @@ public class PickupPassController {
     }
 
     /** OR-07 고객 픽업 QR 만들기 (예전 QR은 지운다) */
+    @Operation(summary = "OR-07 고객 픽업 QR 만들기 (예전 QR은 지운다)")
     @PostMapping("/orders/pickup-pass")
     public PickupPassResponse issue(
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
@@ -45,6 +48,7 @@ public class PickupPassController {
     }
 
     /** OR-08 점주 핸드폰 스캔: 표를 확인하고 이 점포의 열린 컴퓨터 화면에 알린다 */
+    @Operation(summary = "OR-08 점주 핸드폰 스캔: 표를 확인하고 이 점포의 열린 컴퓨터 화면에 알린다")
     @PostMapping("/owner/orders/pickup-scan")
     public PickupScanResponse scan(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
@@ -57,6 +61,7 @@ public class PickupPassController {
      * OR-09 점주 컴퓨터 픽업 QR 알림 SSE. 이벤트 pickup-scan, data {token}. 20초마다 빈 이벤트.
      * 점주가 아니거나 점포가 없으면 본문 없이 403 (매출 SSE와 같은 이유: EventSource는 JSON 오류를 못 받는다)
      */
+    @Operation(summary = "OR-09 점주 컴퓨터 픽업 QR 알림 SSE. 이벤트 pickup-scan, data {token}. 20초마다 빈 이벤트. 점주가 아니거나 점포가 없으면 본문 없이 403 (매출 SSE와 같은 이유: EventSource는 JSON 오류를 못 받는다)")
     @GetMapping(path = "/owner/orders/pickup-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> stream(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
@@ -69,6 +74,7 @@ public class PickupPassController {
     }
 
     /** OR-10 표 또는 6자리 코드로 그 고객의 이 점포 미픽업 주문 */
+    @Operation(summary = "OR-10 표 또는 6자리 코드로 그 고객의 이 점포 미픽업 주문")
     @GetMapping("/owner/orders/pickup-pass/{key}")
     public PickupPassOrdersResponse orders(
             @PathVariable String key,
@@ -78,6 +84,7 @@ public class PickupPassController {
     }
 
     /** OR-11 고른 주문 일괄 픽업 승인 (1~20건, 건마다 결과) */
+    @Operation(summary = "OR-11 고른 주문 일괄 픽업 승인 (1~20건, 건마다 결과)")
     @PostMapping("/owner/orders/pickup")
     public PickupApproveResponse approve(
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role,
@@ -107,6 +114,7 @@ public class PickupPassController {
     }
 
     /** 점주 핸드폰이 QR에서 읽은 표 */
+    @Schema(description = "점주 핸드폰이 QR에서 읽은 표")
     public record ScanRequest(@jakarta.validation.constraints.NotBlank(message = "필수입니다") String token) {
     }
 }

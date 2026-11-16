@@ -1,5 +1,6 @@
 package com.freshlink.order.domain.pickup;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -7,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /** 점주 일괄 픽업 승인: 표와 고른 주문(1~20건) */
+@Schema(description = "점주 일괄 픽업 승인: 표와 고른 주문(1~20건)")
 public record PickupApproveRequest(
         @NotBlank(message = "필수입니다") String token,
         @NotEmpty(message = "주문을 하나 이상 골라 주세요")

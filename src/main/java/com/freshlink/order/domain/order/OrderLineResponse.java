@@ -1,5 +1,6 @@
 package com.freshlink.order.domain.order;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Map;
  * 주문 한 줄(마감세일분·기본분). order_lot을 마감세일 여부와 단가로 묶는다. 재고를 잡기 전(RESERVED 전)이면 줄이 없다.
  * amount는 그 줄 금액(단가 × 수량)
  */
+@Schema(description = "주문 한 줄(마감세일분·기본분). order_lot을 마감세일 여부와 단가로 묶는다. 재고를 잡기 전(RESERVED 전)이면 줄이 없다. amount는 그 줄 금액(단가 × 수량)")
 public record OrderLineResponse(boolean clearance, int quantity, Long unitPrice, Long amount) {
 
     private record Key(boolean clearance, Long unitPrice) {

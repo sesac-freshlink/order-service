@@ -1,9 +1,11 @@
 package com.freshlink.order.domain.order;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
 /** A5 점주 픽업 확인·N-02 픽업 준비 완료 응답. 픽업 시각은 +09:00 (준비 완료면 null) */
+@Schema(description = "A5 점주 픽업 확인·N-02 픽업 준비 완료 응답. 픽업 시각은 +09:00 (준비 완료면 null)")
 public record PickupResponse(
         Long orderId,
         String orderNo,

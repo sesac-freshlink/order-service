@@ -1,8 +1,10 @@
 package com.freshlink.order.domain.pickup;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /** 일괄 픽업 승인 결과. 주문마다 따로 처리한다 */
+@Schema(description = "일괄 픽업 승인 결과. 주문마다 따로 처리한다")
 public record PickupApproveResponse(List<Result> results) {
 
     /**
@@ -11,6 +13,8 @@ public record PickupApproveResponse(List<Result> results) {
      */
     public enum Outcome { PICKED_UP, NOT_PICKABLE, DEADLINE_PASSED, NOT_FOUND }
 
+    /** 주문 하나의 픽업 승인 결과 */
+    @Schema(description = "주문 하나의 픽업 승인 결과")
     public record Result(Long orderId, Outcome result) {
     }
 }

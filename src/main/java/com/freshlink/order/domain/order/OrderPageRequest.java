@@ -2,9 +2,11 @@ package com.freshlink.order.domain.order;
 
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Set;
 
 /** A3·A6 목록 페이지 값. page는 0부터, size는 10·20·50만 (추가 명세 A3·A6, 기본 20). 어기면 400 VALIDATION_ERROR */
+@Schema(description = "A3·A6 목록 페이지 값. page는 0부터, size는 10·20·50만 (추가 명세 A3·A6, 기본 20). 어기면 400 VALIDATION_ERROR")
 public record OrderPageRequest(int page, int size) {
 
     public static final int DEFAULT_SIZE = 20;
