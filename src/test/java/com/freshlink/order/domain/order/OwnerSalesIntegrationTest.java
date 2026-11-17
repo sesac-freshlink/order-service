@@ -156,4 +156,101 @@ class OwnerSalesIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("STORE_NOT_LINKED"));
     }
+
+    /** 상품·수량·마감세일 수량을 정한 결제 완료 주문. 반환은 주문 ID */
+    private long paidProduct(long storeId, long productId, String name, int qty, int clearance, long amount,
+                             String approvedAt) {
+        Order o = orderRepository.saveAndFlush(Order.create(UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(), storeId, "점포", productId, qty));
+        jdbc.update("UPDATE orders SET status = 'PAID', paid_at = ?, product_name = ?, quantity = ?, "
+                + "clearance_quantity = ?, amount = ?, order_no = ? WHERE id = ?", approvedAt, name, qty, clearance,
+                amount, "FL-20261113-" + o.getId(), o.getId());
+        jdbc.update("INSERT INTO payment (order_id, payment_key, toss_idempotency_key, amount, status, toss_status, "
+                        + "method, approved_at, created_at, updated_at) VALUES (?, ?, ?, ?, 'DONE', 'DONE', '카드', ?, NOW(6), NOW(6))",
+                o.getId(), "pk_" + o.getId(), UUID.randomUUID().toString(), amount, approvedAt);
+        return o.getId();
+    }
+
+    /** 그 주문의 환불 완료 시도 하나 (환불 시각 canceledAt, KST) */
+    private void refunded(long orderId, long amount, String canceledAt) {
+        jdbc.update("INSERT INTO refund (order_id, attempt_no, requested_by, requester_id, reason, amount, "
+                        + "toss_idempotency_key, status, requested_at, canceled_at, created_at, updated_at) "
+                        + "VALUES (?, 1, 'CUSTOMER', ?, 'CHANGE_OF_MIND', ?, ?, 'COMPLETED', ?, ?, NOW(6), NOW(6))",
+                orderId, UUID.randomUUID().toString(), amount, UUID.randomUUID().toString(), canceledAt, canceledAt);
+    }
+
+    private ResultActions products(long storeId, String query) throws Exception {
+        return mockMvc.perform(get("/owner/orders/sales/products?" + query)
+                .header("X-User-Id", UUID.randomUUID().toString())
+                .header("X-User-Role", "OWNER").header("X-Store-Id", String.valueOf(storeId)));
+    }
+
+    @Test
+    void 하루_상품별_매출은_그날_결제를_상품마다_더하고_많이_팔린_순으로_준다() throws Exception {
+        long store = storeId();
+        // 삼각김밥 2건(하나는 마감세일 1개 섞임, 실제 결제 금액은 할인 반영), 바나나우유 1건
+        paidProduct(store, 1L, "삼각김밥 참치마요", 2, 0, 3000L, "2026-11-13 09:00:00");
+        paidProduct(store, 1L, "삼각김밥 참치마요", 3, 1, 4050L, "2026-11-13 23:59:59");
+        paidProduct(store, 2L, "바나나우유", 4, 0, 6800L, "2026-11-13 12:00:00");
+        // 다른 날·다른 점포는 빠진다
+        paidProduct(store, 1L, "삼각김밥 참치마요", 9, 0, 13500L, "2026-11-14 00:00:00");
+        paidProduct(store + 1, 1L, "삼각김밥 참치마요", 9, 0, 13500L, "2026-11-13 10:00:00");
+
+        products(store, "date=2026-11-13")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.date").value("2026-11-13"))
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].productId").value(1))
+                .andExpect(jsonPath("$.items[0].productName").value("삼각김밥 참치마요"))
+                .andExpect(jsonPath("$.items[0].soldQuantity").value(5))
+                .andExpect(jsonPath("$.items[0].clearanceQuantity").value(1))
+                .andExpect(jsonPath("$.items[0].netAmount").value(7050))
+                .andExpect(jsonPath("$.items[1].productName").value("바나나우유"))
+                .andExpect(jsonPath("$.items[1].soldQuantity").value(4))
+                .andExpect(jsonPath("$.items[1].netAmount").value(6800));
+    }
+
+    @Test
+    void 그날_환불_완료된_주문은_수량과_금액에서_뺀다() throws Exception {
+        long store = storeId();
+        long yesterday = paidProduct(store, 3L, "샌드위치 햄치즈", 2, 1, 5400L, "2026-11-12 18:00:00");
+        paidProduct(store, 3L, "샌드위치 햄치즈", 1, 0, 3200L, "2026-11-13 10:00:00");
+        long refundedToday = paidProduct(store, 2L, "바나나우유", 1, 0, 1700L, "2026-11-13 11:00:00");
+        refunded(yesterday, 5400L, "2026-11-13 09:00:00");
+        refunded(refundedToday, 1700L, "2026-11-13 15:00:00");
+
+        products(store, "date=2026-11-13")
+                .andExpect(status().isOk())
+                // 샌드위치: 오늘 1개 3,200원 - 어제 결제분 환불 2개(마감세일 1) 5,400원
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].productName").value("샌드위치 햄치즈"))
+                .andExpect(jsonPath("$.items[0].soldQuantity").value(-1))
+                .andExpect(jsonPath("$.items[0].clearanceQuantity").value(-1))
+                .andExpect(jsonPath("$.items[0].netAmount").value(-2200));
+    }
+
+    @Test
+    void 팔린_것이_없으면_빈_목록() throws Exception {
+        products(storeId(), "date=2026-11-13")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    @Test
+    void 하루_상품별_매출_날짜가_없거나_틀리면_400_점주가_아니면_403() throws Exception {
+        long store = storeId();
+        products(store, "").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        products(store, "date=2026/11/13").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mockMvc.perform(get("/owner/orders/sales/products?date=2026-11-13")
+                        .header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Role", "CUSTOMER").header("X-Store-Id", "1"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/owner/orders/sales/products?date=2026-11-13")
+                        .header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Role", "OWNER"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("STORE_NOT_LINKED"));
+    }
 }

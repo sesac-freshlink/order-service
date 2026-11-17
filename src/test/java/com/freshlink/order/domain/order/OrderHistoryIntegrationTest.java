@@ -29,6 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class OrderHistoryIntegrationTest {
 
+    /** 같은 고객의 열린 주문이 겹치지 않게 주문마다 다른 상품 번호를 쓴다 (V10 uk_orders_open) */
+    private long nextProduct = 1_000L;
+
     private static final ZoneOffset KST = ZoneOffset.ofHours(9);
     private static final OffsetDateTime BASE = OffsetDateTime.of(2026, 10, 20, 10, 0, 0, 0, KST);
 
@@ -50,15 +53,22 @@ class OrderHistoryIntegrationTest {
     /** 상태·시각을 SQL로 맞춘 주문. minutes는 BASE에서 몇 분 뒤에 만들었는지 (클수록 최신) */
     private long order(String customer, long storeId, String status, int minutes) {
         Order o = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(), storeId,
-                "프레시 강남점", 15L, 2));
+                "프레시 강남점", nextProduct++, 2));
         OffsetDateTime at = BASE.plusMinutes(minutes);
         jdbc.update("UPDATE orders SET status = ?, created_at = ?, product_name = '매운 컵라면 115g', unit_price = 1700, "
                         + "amount = 3400, order_no = ?, paid_at = ?, picked_up_at = ?, pickup_deadline = ? WHERE id = ?",
                 status, at.toLocalDateTime(), "FL-20261020-" + o.getId(),
-                status.equals("PAID") || status.startsWith("PICK") ? at.plusMinutes(1).toLocalDateTime() : null,
+                status.equals("PAID") || status.startsWith("PICK") || status.equals("READY_FOR_PICKUP") ? at.plusMinutes(1).toLocalDateTime() : null,
                 status.equals("PICKED_UP") ? at.plusMinutes(2).toLocalDateTime() : null,
                 at.plusDays(2).toLocalDateTime(), o.getId());
         return o.getId();
+    }
+
+    /** 상품명을 바꾼 주문 (A3 상품명 검색 테스트용) */
+    private long named(String customer, long storeId, String status, int minutes, String productName) {
+        long id = order(customer, storeId, status, minutes);
+        jdbc.update("UPDATE orders SET product_name = ? WHERE id = ?", productName, id);
+        return id;
     }
 
     private ResultActions customerList(String customer, String query) throws Exception {
@@ -112,6 +122,82 @@ class OrderHistoryIntegrationTest {
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested, (int) paid)));
         customerList(me, "?tab=PICKED_UP").andExpect(jsonPath("$.content[*].orderId").value(contains((int) picked)));
         customerList(me, "?tab=CANCELED").andExpect(jsonPath("$.content[*].orderId").value(contains((int) expired)));
+    }
+
+    @Test
+    void 고객_상품명_검색은_상품명_일부가_들어_있는_본인_주문만_대소문자_없이_찾는다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long milk = named(me, store, "PAID", 1, "바나나우유 240ml");
+        long jersey = named(me, store, "PICKED_UP", 2, "JERSEY 우유 푸딩");
+        named(me, store, "PICKED_UP", 3, "삼각김밥 참치마요");
+        named(UUID.randomUUID().toString(), store, "PAID", 4, "흰 우유 500ml");   // 다른 고객
+
+        search(me, "", "  우유 ")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) jersey, (int) milk)))
+                .andExpect(jsonPath("$.totalElements").value(2));
+        search(me, "", "jersey").andExpect(jsonPath("$.content[*].orderId").value(contains((int) jersey)));
+    }
+
+    @Test
+    void 고객_상품명_검색어가_비면_전체이고_구분_기간과_같이_쓴다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long paidMilk = named(me, store, "PAID", 1, "바나나우유 240ml");
+        long pickedMilk = named(me, store, "PICKED_UP", 2, "흰 우유 500ml");
+        long gimbap = named(me, store, "PICKED_UP", 3, "삼각김밥 참치마요");
+
+        search(me, "", "   ").andExpect(jsonPath("$.totalElements").value(3));
+        search(me, "?tab=PICKED_UP", "우유")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedMilk)));
+        search(me, "?from=2026-10-20&to=2026-10-20", "우유")
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedMilk, (int) paidMilk)));
+        search(me, "?from=2026-10-21", "우유").andExpect(jsonPath("$.totalElements").value(0));
+        search(me, "", "김밥").andExpect(jsonPath("$.content[*].orderId").value(contains((int) gimbap)));
+    }
+
+    @Test
+    void 고객_상품명_검색어의_퍼센트_밑줄_느낌표는_글자_그대로_찾는다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        long store = storeId();
+        long percent = named(me, store, "PAID", 1, "할인 30% 도시락");
+        long underscore = named(me, store, "PAID", 2, "a_b 샌드위치");
+        long bang = named(me, store, "PAID", 3, "대박! 김밥");
+        named(me, store, "PAID", 4, "할인 300 도시락");
+        named(me, store, "PAID", 5, "axb 샌드위치");
+
+        search(me, "", "30%").andExpect(jsonPath("$.content[*].orderId").value(contains((int) percent)));
+        search(me, "", "a_b").andExpect(jsonPath("$.content[*].orderId").value(contains((int) underscore)));
+        search(me, "", "대박!").andExpect(jsonPath("$.content[*].orderId").value(contains((int) bang)));
+        search(me, "", "%").andExpect(jsonPath("$.content[*].orderId").value(contains((int) percent)));
+    }
+
+    @Test
+    void 고객_상품명_검색어가_50자를_넘으면_400() throws Exception {
+        String me = UUID.randomUUID().toString();
+        search(me, "", "가".repeat(50)).andExpect(status().isOk());
+        search(me, "", "가".repeat(51))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("q: 50자 이하여야 합니다"));
+    }
+
+    @Test
+    void 고객_상품명_검색어_50자는_이모지도_한_글자로_센다() throws Exception {
+        String me = UUID.randomUUID().toString();
+        String emoji = "\uD83C\uDF4C";   // 🍌 (UTF-16 로는 2칸)
+        search(me, "", emoji.repeat(26)).andExpect(status().isOk());
+        search(me, "", emoji.repeat(50)).andExpect(status().isOk());
+        search(me, "", emoji.repeat(25) + "가".repeat(26))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    /** 상품명 검색어 q 는 param 으로 넘긴다(% 같은 글자를 MockMvc 가 알맞게 인코딩하게) */
+    private ResultActions search(String customer, String query, String q) throws Exception {
+        return mockMvc.perform(get("/orders" + query).param("q", q)
+                .header("X-User-Id", customer).header("X-User-Role", "CUSTOMER"));
     }
 
     @Test
@@ -200,16 +286,25 @@ class OrderHistoryIntegrationTest {
         order(c, store, "EXPIRED", 4);
         order(c, storeId() + 1, "PAID", 7);   // 다른 점포
         long requested = order(c, store, "PICKUP_REQUESTED", 8);
+        long ready = order(c, store, "READY_FOR_PICKUP", 9);
 
         mockMvc.perform(ownerList(store, "?tab=PICKUP_WAITING"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested, (int) paidNew, (int) paidOld)))
-                .andExpect(jsonPath("$.content[0].status").value("PICKUP_REQUESTED"));
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) ready, (int) requested, (int) paidNew, (int) paidOld)))
+                .andExpect(jsonPath("$.content[1].status").value("PICKUP_REQUESTED"));
         mockMvc.perform(ownerList(store, "?tab=PICKED_UP"))
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickedNew, (int) pickedOld)))
                 .andExpect(jsonPath("$.content[0].pickedUpAt").value("2026-10-20T10:08:00+09:00"));
         mockMvc.perform(ownerList(store, "?tab=PICKUP_EXPIRED"))
                 .andExpect(jsonPath("$.content[*].orderId").value(contains((int) pickupExpired)));
+        // 11/15: 픽업 신청·준비 완료를 따로 보는 구분과 전체 (PICKUP_WAITING 은 예전 화면을 위해 그대로)
+        mockMvc.perform(ownerList(store, "?tab=PICKUP_REQUESTED"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) requested)));
+        mockMvc.perform(ownerList(store, "?tab=READY_FOR_PICKUP"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) ready)));
+        mockMvc.perform(ownerList(store, "?tab=ALL"))
+                .andExpect(jsonPath("$.content[*].orderId").value(contains((int) ready, (int) requested,
+                        (int) pickedNew, (int) paidNew, (int) pickupExpired, (int) pickedOld, (int) paidOld)));
         // 취소·환불은 환불(A7~A9) 전이라 비어 있다. 결제 전 만료(EXPIRED)는 점주 목록에 넣지 않는다
         mockMvc.perform(ownerList(store, "?tab=CANCELED"))
                 .andExpect(status().isOk())
@@ -232,7 +327,7 @@ class OrderHistoryIntegrationTest {
     @Test
     void 점주_모르는_구분이나_잘못된_페이지는_400() throws Exception {
         long store = storeId();
-        mockMvc.perform(ownerList(store, "?tab=ALL"))
+        mockMvc.perform(ownerList(store, "?tab=NOPE"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         mockMvc.perform(ownerList(store, "?tab=PICKED_UP&size=0")).andExpect(status().isBadRequest());

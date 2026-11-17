@@ -29,6 +29,12 @@ public record SalesPeriod(LocalDate from, LocalDate to) {
         return new SalesPeriod(f, t);
     }
 
+    /** 하루(date) 기간. 이름이 date라 오류 문구도 date로 나온다 (하루 상품별 매출) */
+    public static SalesPeriod day(String date) {
+        LocalDate d = date("date", date);
+        return new SalesPeriod(d, d);
+    }
+
     /** from 00:00 KST 이상 */
     OffsetDateTime start() {
         return from.atStartOfDay(KST).toOffsetDateTime();

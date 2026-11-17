@@ -18,6 +18,7 @@ public enum OrderErrorCode implements ErrorCode {
     STORE_NOT_LINKED(403, "연결된 점포가 없습니다"),
     ORDER_NOT_FOUND(404, "주문이 없습니다"),
     IDEMPOTENCY_KEY_REUSED(409, "같은 요청 번호로 다른 주문을 만들 수 없습니다"),
+    ORDER_ALREADY_PENDING(409, "결제하지 않은 주문이 있어요"),
     ORDER_NOT_PAYABLE(409, "결제할 수 없는 주문입니다"),
     ORDER_EXPIRED(409, "결제 시간이 지났습니다"),
     PAYMENT_INFO_MISMATCH(409, "이미 다른 결제로 처리 중입니다"),

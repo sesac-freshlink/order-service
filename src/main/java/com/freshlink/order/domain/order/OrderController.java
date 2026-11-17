@@ -10,6 +10,8 @@ import com.freshlink.order.domain.payment.PaymentService;
 import com.freshlink.order.domain.refund.CancelRequest;
 import com.freshlink.order.domain.refund.CancelResponse;
 import com.freshlink.order.domain.refund.RefundService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -49,6 +51,9 @@ public class OrderController {
      * OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200.
      * 선착순 상품이면 입장권이 있어야 하고 1개만 살 수 있다(FirstComeOrderGate). 주문을 만들지 못하면 입장권을 되돌린다
      */
+    @Operation(summary = "OR-01 주문 생성: 새 주문 201, 같은 키 재요청 200. 선착순 상품이면 입장권이 있어야 하고 1개만 살 수 있다(FirstComeOrderGate). 주문을 만들지 못하면 입장권을 되돌린다")
+    @ApiResponse(responseCode = "201", description = "새 주문을 만들었다")
+    @ApiResponse(responseCode = "200", description = "같은 요청 번호로 이미 만든 주문을 그대로 돌려준다")
     @PostMapping
     public ResponseEntity<CreateOrderResponse> create(
             @RequestHeader(name = AuthHeaders.IDEMPOTENCY_KEY, required = false) String idempotencyKey,
@@ -73,8 +78,10 @@ public class OrderController {
 
     /**
      * A3 고객 주문 내역: tab = PICKUP_WAITING·PICKED_UP·CANCELED·ALL(기본), page(0부터)·size(10·20·50, 기본 20).
-     * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택. 탭과 같이 쓴다
+     * from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택. 탭과 같이 쓴다.
+     * q(11/11)는 상품명 일부(앞뒤 공백 빼고 50자까지, 대소문자 구분 없음). 비우면 조건 없음, 50자 넘으면 400
      */
+    @Operation(summary = "A3 고객 주문 내역: tab = PICKUP_WAITING·PICKED_UP·CANCELED·ALL(기본), page(0부터)·size(10·20·50, 기본 20). from·to(KST 날짜 yyyy-MM-dd, 주문일시 기준, 둘 다 포함)는 선택. 탭과 같이 쓴다. q(11/11)는 상품명 일부(앞뒤 공백 빼고 50자까지, 대소문자 구분 없음). 비우면 조건 없음, 50자 넘으면 400")
     @GetMapping
     public PageResponse<CustomerOrderSummaryResponse> list(
             @RequestParam(required = false, defaultValue = "ALL") String tab,
@@ -82,14 +89,16 @@ public class OrderController {
             @RequestParam(required = false) Integer size,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
+            @RequestParam(required = false) String q,
             @RequestHeader(name = AuthHeaders.USER_ID, required = false) String userId,
             @RequestHeader(name = AuthHeaders.USER_ROLE, required = false) String role) {
         requireCustomer(userId, role);
         return orderService.listForCustomer(userId, OrderPageRequest.tab(CustomerOrderTab.class, tab),
-                OrderPeriod.of(from, to), OrderPageRequest.of(page, size));
+                OrderPeriod.of(from, to), OrderKeyword.likePattern(q), OrderPageRequest.of(page, size));
     }
 
     /** OR-02 주문 조회: 본인 주문만 */
+    @Operation(summary = "OR-02 주문 조회: 본인 주문만")
     @GetMapping("/{orderId}")
     public OrderResponse get(
             @PathVariable Long orderId,
@@ -100,6 +109,7 @@ public class OrderController {
     }
 
     /** OR-03 결제 승인: 토스 결제창 성공 뒤 화면이 부른다. 결과는 status로 알린다 */
+    @Operation(summary = "OR-03 결제 승인: 토스 결제창 성공 뒤 화면이 부른다. 결과는 status로 알린다")
     @PostMapping("/{orderId}/payment/confirm")
     public PaymentConfirmResponse confirmPayment(
             @PathVariable Long orderId,
@@ -114,6 +124,7 @@ public class OrderController {
      * A7 결제 전 취소: 결제 대기 화면의 "주문 취소". 사유는 받지 않고 환불금액은 0원이다.
      * 승인 중·결과 확인 중이거나 결제가 끝난 주문은 409 (결제 후 취소는 A8)
      */
+    @Operation(summary = "A7 결제 전 취소: 결제 대기 화면의 \"주문 취소\". 사유는 받지 않고 환불금액은 0원이다. 승인 중·결과 확인 중이거나 결제가 끝난 주문은 409 (결제 후 취소는 A8)")
     @PostMapping("/{orderId}/payment/cancel")
     public OrderResponse cancelBeforePayment(
             @PathVariable Long orderId,
@@ -128,6 +139,7 @@ public class OrderController {
      * 고객 픽업 신청 (11/10): "오늘 받아 갈게요". 본인 결제 완료 주문만, 기한을 오늘 23:59(KST)로 당기고 점주에게 알린다.
      * 이미 신청했거나 준비 완료면 그대로 돌려준다. 신청할 수 없는 상태면 409 ORDER_NOT_PICKUP_REQUESTABLE, 기한이 지났으면 409
      */
+    @Operation(summary = "고객 픽업 신청 (11/10): \"오늘 받아 갈게요\". 본인 결제 완료 주문만, 기한을 오늘 23:59(KST)로 당기고 점주에게 알린다. 이미 신청했거나 준비 완료면 그대로 돌려준다. 신청할 수 없는 상태면 409 ORDER_NOT_PICKUP_REQUESTABLE, 기한이 지났으면 409")
     @PostMapping("/{orderId}/pickup-request")
     public OrderResponse requestPickup(
             @PathVariable Long orderId,
@@ -142,6 +154,7 @@ public class OrderController {
      * A8 고객 결제 후 취소: 본인 PAID·환불 NONE·픽업 기한 이내 주문을 전체 취소·전액 환불한다(점주 승인 없음).
      * 환불이 실패(FAILED)한 주문은 같은 주소로 다시 신청한다(사유는 새로 받는다). 결과는 refundStatus로 알린다
      */
+    @Operation(summary = "A8 고객 결제 후 취소: 본인 PAID·환불 NONE·픽업 기한 이내 주문을 전체 취소·전액 환불한다(점주 승인 없음). 환불이 실패(FAILED)한 주문은 같은 주소로 다시 신청한다(사유는 새로 받는다). 결과는 refundStatus로 알린다")
     @PostMapping("/{orderId}/cancel")
     public CancelResponse cancel(
             @PathVariable Long orderId,

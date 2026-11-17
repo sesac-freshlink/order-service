@@ -1,5 +1,6 @@
 package com.freshlink.order.domain.refund;
 
+import com.freshlink.order.domain.order.SoldProduct;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -31,4 +32,14 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
             + " and r.canceledAt >= :start and r.canceledAt < :end")
     List<CompletedRefund> findCompletedForStore(@Param("storeId") Long storeId, @Param("status") RefundStatus status,
                                                 @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
+
+    /** 위와 같은 환불을 주문의 상품·수량과 함께 읽는다 (점주 하루 상품별 매출에서 뺀다) */
+    @Query("select new com.freshlink.order.domain.order.SoldProduct(o.productId, o.productName, o.quantity,"
+            + " o.clearanceQuantity, r.amount)"
+            + " from Refund r, Order o where o.id = r.orderId and o.storeId = :storeId and r.status = :status"
+            + " and r.canceledAt >= :start and r.canceledAt < :end")
+    List<SoldProduct> findCompletedProductsForStore(@Param("storeId") Long storeId,
+                                                    @Param("status") RefundStatus status,
+                                                    @Param("start") OffsetDateTime start,
+                                                    @Param("end") OffsetDateTime end);
 }

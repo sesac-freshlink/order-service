@@ -27,6 +27,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class CustomerActiveOrdersIntegrationTest {
 
+    /** 같은 고객의 열린 주문이 겹치지 않게 주문마다 다른 상품 번호를 쓴다 (V10 uk_orders_open) */
+    private long nextProduct = 1_000L;
+
     @Autowired
     MockMvc mockMvc;
     @Autowired
@@ -37,7 +40,7 @@ class CustomerActiveOrdersIntegrationTest {
     SqsTemplate sqsTemplate;
 
     private void order(String customer, String status, String refund) {
-        Order o = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(), 1L, "점포", 15L, 1));
+        Order o = orderRepository.saveAndFlush(Order.create(customer, UUID.randomUUID().toString(), 1L, "점포", nextProduct++, 1));
         jdbc.update("UPDATE orders SET status = ?, refund_status = ? WHERE id = ?", status, refund, o.getId());
     }
 

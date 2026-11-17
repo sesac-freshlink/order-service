@@ -1,5 +1,6 @@
 package com.freshlink.order.domain.payment;
 
+import com.freshlink.order.domain.order.SoldProduct;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -31,4 +32,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             + " and p.approvedAt >= :start and p.approvedAt < :end")
     List<ApprovedPayment> findApprovedForStore(@Param("storeId") Long storeId, @Param("status") PaymentStatus status,
                                                @Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
+
+    /** 위와 같은 결제를 주문의 상품·수량과 함께 읽는다 (점주 하루 상품별 매출) */
+    @Query("select new com.freshlink.order.domain.order.SoldProduct(o.productId, o.productName, o.quantity,"
+            + " o.clearanceQuantity, p.amount)"
+            + " from Payment p, Order o where o.id = p.orderId and o.storeId = :storeId and p.status = :status"
+            + " and p.approvedAt >= :start and p.approvedAt < :end")
+    List<SoldProduct> findApprovedProductsForStore(@Param("storeId") Long storeId,
+                                                   @Param("status") PaymentStatus status,
+                                                   @Param("start") OffsetDateTime start,
+                                                   @Param("end") OffsetDateTime end);
 }

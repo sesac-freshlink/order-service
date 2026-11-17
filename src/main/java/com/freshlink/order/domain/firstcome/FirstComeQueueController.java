@@ -3,6 +3,8 @@ package com.freshlink.order.domain.firstcome;
 import com.freshlink.common.error.BusinessException;
 import com.freshlink.order.common.error.OrderErrorCode;
 import com.freshlink.order.common.web.AuthHeaders;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +32,7 @@ public class FirstComeQueueController {
     }
 
     /** 줄 서기. 이미 서 있으면 원래 자리 그대로 */
+    @Operation(summary = "줄 서기. 이미 서 있으면 원래 자리 그대로")
     @PostMapping("/{productId}")
     public QueueStatusResponse join(
             @PathVariable Long productId,
@@ -41,6 +44,7 @@ public class FirstComeQueueController {
     }
 
     /** 내 순번·앞에 남은 사람 수·남은 수량·입장권 (대기 화면이 2~3초마다 부른다) */
+    @Operation(summary = "내 순번·앞에 남은 사람 수·남은 수량·입장권 (대기 화면이 2~3초마다 부른다)")
     @GetMapping("/{productId}/me")
     public QueueStatusResponse me(
             @PathVariable Long productId,
@@ -52,6 +56,8 @@ public class FirstComeQueueController {
     }
 
     /** 그만 기다리기 */
+    @Operation(summary = "그만 기다리기")
+    @ApiResponse(responseCode = "204", description = "줄에서 빠졌다")
     @DeleteMapping("/{productId}/me")
     public ResponseEntity<Void> leave(
             @PathVariable Long productId,

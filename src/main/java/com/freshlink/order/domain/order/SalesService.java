@@ -9,6 +9,7 @@ import com.freshlink.order.domain.refund.RefundStatus;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,6 +62,45 @@ public class SalesService {
                 new SalesResponse.Period(unit.label(start), b[0], b[2], b[0] - b[2], b[1], b[3], b[4])));
         return new SalesResponse(period.from().toString(), period.to().toString(),
                 unit.name().toLowerCase(Locale.ROOT), periods);
+    }
+
+    /**
+     * 점주 하루 상품별 매출: 그날(KST) 결제 승인된 주문의 상품·수량·마감세일 수량·결제 금액을 더하고,
+     * 그날 환불 완료된 주문은 같은 값을 뺀다(매출 대시보드의 순매출과 같은 기준). 많이 팔린 순으로 준다
+     */
+    @Transactional(readOnly = true)
+    public SalesProductsResponse products(Long storeId, SalesPeriod day) {
+        Map<Long, long[]> sums = new LinkedHashMap<>(); // [수량, 마감세일 수량, 금액]
+        Map<Long, String> names = new LinkedHashMap<>();
+        for (SoldProduct s : paymentRepository.findApprovedProductsForStore(
+                storeId, PaymentStatus.DONE, day.start(), day.end())) {
+            add(sums, names, s, 1);
+        }
+        for (SoldProduct s : refundRepository.findCompletedProductsForStore(
+                storeId, RefundStatus.COMPLETED, day.start(), day.end())) {
+            add(sums, names, s, -1);
+        }
+        List<SalesProductsResponse.Item> items = new ArrayList<>(sums.size());
+        sums.forEach((productId, v) -> {
+            if (v[0] != 0 || v[2] != 0) {
+                items.add(new SalesProductsResponse.Item(productId, names.get(productId), v[0], v[1], v[2]));
+            }
+        });
+        items.sort(Comparator.comparingLong(SalesProductsResponse.Item::soldQuantity).reversed()
+                .thenComparing(Comparator.comparingLong(SalesProductsResponse.Item::netAmount).reversed())
+                .thenComparing(SalesProductsResponse.Item::productId));
+        return new SalesProductsResponse(day.from().toString(), items);
+    }
+
+    private static void add(Map<Long, long[]> sums, Map<Long, String> names, SoldProduct s, int sign) {
+        long[] v = sums.computeIfAbsent(s.productId(), k -> new long[3]);
+        v[0] += (long) sign * s.quantity();
+        v[1] += (long) sign * s.clearanceQuantity();
+        v[2] += sign * s.amount();
+        // 상품명이 비어 있지 않은 첫 값을 쓴다(주문 때 저장한 이름)
+        if (s.productName() != null && !s.productName().isBlank()) {
+            names.putIfAbsent(s.productId(), s.productName());
+        }
     }
 
     /** 매출 SSE용: 그 점포의 date(KST) 하루 결제 금액·건수 */

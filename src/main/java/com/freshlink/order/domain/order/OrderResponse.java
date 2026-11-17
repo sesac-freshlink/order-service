@@ -4,6 +4,7 @@ import com.freshlink.order.domain.payment.Payment;
 import com.freshlink.order.domain.refund.Refund;
 import com.freshlink.order.domain.refund.RefundResponse;
 import com.freshlink.order.domain.refund.RefundStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
  * clearanceQuantity·lines는 마감세일 함께 사기의 마감세일 수량과 줄(마감세일·기본)이다. 재고를 잡기 전이면 lines는 빈 배열.
  * availableQuantity·clearanceAvailableQuantity는 재고 확보 실패 때 기본·마감세일 남은 수(없으면 null)다
  */
+@Schema(description = "OR-02 주문 조회 응답. 시각은 모두 +09:00으로 바꿔 내린다. DB에서 읽은 OffsetDateTime은 JVM 기본 시간대(파드는 UTC일 수 있다)로 오기 때문이다. serverTime은 응답을 만든 서버 현재 시각이다. 화면은 기기 시계와의 차이를 보정해 결제 남은 시간을 센다. refundStatus·refund는 결제 후 취소·환불 표시(추가 명세 A8)다. refund는 마지막 시도이고 없으면 null. clearanceQuantity·lines는 마감세일 함께 사기의 마감세일 수량과 줄(마감세일·기본)이다. 재고를 잡기 전이면 lines는 빈 배열. availableQuantity·clearanceAvailableQuantity는 재고 확보 실패 때 기본·마감세일 남은 수(없으면 null)다")
 public record OrderResponse(
         Long orderId,
         String orderNo,

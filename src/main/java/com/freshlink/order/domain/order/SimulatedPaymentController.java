@@ -2,6 +2,7 @@ package com.freshlink.order.domain.order;
 
 import com.freshlink.order.domain.payment.PaymentConfirmResponse;
 import com.freshlink.order.domain.payment.SimulatedPaymentService;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +24,8 @@ public class SimulatedPaymentController {
         this.simulatedPaymentService = simulatedPaymentService;
     }
 
+    /** 운영: 시뮬레이터 주문 결제 완료 (토스를 부르지 않는다, app.simulated-payment.enabled=true일 때만) */
+    @Operation(summary = "운영: 시뮬레이터 주문 결제 완료 (토스를 부르지 않는다, app.simulated-payment.enabled=true일 때만)")
     @PostMapping("/{orderId}/simulated-payment")
     public PaymentConfirmResponse pay(@PathVariable Long orderId) {
         return simulatedPaymentService.pay(orderId);
